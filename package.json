@@ -1,0 +1,16 @@
+{
+  "name": "contextboundary-gw",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Transparent ContextBoundary MCP gateway scaffold for future policy enforcement.",
+  "license": "Apache-2.0",
+  "scripts": {
+    "dev": "npx wrangler dev",
+    "test": "node test/conformance/run.mjs",
+    "deploy": "npx wrangler deploy"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

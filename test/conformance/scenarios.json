@@ -1,0 +1,79 @@
+[
+  {
+    "id": "transparent-discover",
+    "policy": "policy/empty.yaml",
+    "identity": {
+      "agent": "conformance-smoke",
+      "owner": "hanuman"
+    },
+    "action": {
+      "method": "POST",
+      "headers": {
+        "content-type": "application/json",
+        "MCP-Protocol-Version": "2026-07-28",
+        "Mcp-Method": "server/discover"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": "discover-1",
+        "method": "server/discover",
+        "params": {
+          "_meta": {
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+            "io.modelcontextprotocol/clientInfo": {
+              "name": "contextboundary-gw-conformance",
+              "version": "0.1.0"
+            },
+            "io.modelcontextprotocol/clientCapabilities": {}
+          }
+        }
+      }
+    },
+    "expect": {
+      "outcome": "allow",
+      "auditRecord": {
+        "required": ["scenarioId", "identity.agent", "action.method", "decision.outcome", "observed.httpStatus"]
+      }
+    }
+  },
+  {
+    "id": "transparent-get-stack-overview",
+    "policy": "policy/empty.yaml",
+    "identity": {
+      "agent": "conformance-smoke",
+      "owner": "hanuman"
+    },
+    "action": {
+      "method": "POST",
+      "headers": {
+        "content-type": "application/json",
+        "MCP-Protocol-Version": "2026-07-28",
+        "Mcp-Method": "tools/call",
+        "Mcp-Name": "get_stack_overview"
+      },
+      "body": {
+        "jsonrpc": "2.0",
+        "id": "overview-1",
+        "method": "tools/call",
+        "params": {
+          "name": "get_stack_overview",
+          "arguments": {},
+          "_meta": {
+            "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+            "io.modelcontextprotocol/clientInfo": {
+              "name": "contextboundary-gw-conformance",
+              "version": "0.1.0"
+            },
+            "io.modelcontextprotocol/clientCapabilities": {}
+          }
+        }
+      }
+    },
+    "expect": {
+      "outcome": "allow",
+      "auditRecord": {
+        "required": ["scenarioId", "identity.owner", "action.name", "decision.outcome", "observed.jsonrpc"]
+      }
+    }
+  }
+]
