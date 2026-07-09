@@ -13,6 +13,11 @@ egress_tiers:
   - id: I
   - id: II
   - id: III
+egress_detectors:
+  - id: det:credential-pattern
+    description: Credential-shaped content
+    match: credential-patterns
+    min_tier: I
 identities:
   - id: agent:run-l1
     accountable_owner: role:run-lead-apac
@@ -43,7 +48,7 @@ capabilities:
     source: mcp:vendor
     required_tier: T3
     discover_min_tier: T3
-    egress_tier: III
+    egress_tier: I
     requires_approval: true
 endpoints:
   - id: primary
@@ -56,8 +61,12 @@ endpoints:
     fallbacks: []
   - id: loose
     continuity_class: domestic
-    zone: I
+    zone: III
     fallbacks: []
+  - id: primary-loose-only
+    continuity_class: export-exposed
+    zone: II
+    fallbacks: [loose]
 audit:
   emit:
     - agent_id
@@ -67,5 +76,7 @@ audit:
     - decision
     - rule_id
     - egress_tier_seen
+    - detector_id
+    - obligation
     - timestamp
   sink: analytics-engine

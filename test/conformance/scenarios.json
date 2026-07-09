@@ -12,11 +12,11 @@
   {"id":"S-R3-02","identity":"run-l1","action":{"type":"invoke","capability":"apply-change","payload":{}},"expect":{"decision":"approve","rule_id":"R3","reason":"tier_escalation"}},
   {"id":"S-R3-03","identity":"run-l3","action":{"type":"invoke","capability":"apply-change","payload":{}},"expect":{"decision":"allow","rule_id":"R3","reason":"tier_satisfied"}},
   {"id":"S-R3-04","identity":"run-l1","action":{"type":"invoke","capability":"read-secrets","payload":{}},"expect":{"decision":"deny","rule_id":"R2","reason":"untrusted_source"}},
-  {"id":"S-R3-05","identity":"run-l1","action":{"type":"invoke","capability":"apply-change","payload":{"autonomy_tier":"T3"}},"expect":{"decision":"approve","rule_id":"R3","reason":"payload_tier_ignored"}},
+  {"id":"S-R3-05","identity":"run-l1","action":{"type":"invoke","capability":"apply-change","payload":{"autonomy_tier":"T3"}},"expect":{"decision":"approve","rule_id":"R3","reason":"tier_escalation","effective_tier":"T1"}},
 
   {"id":"S-R4-01","identity":"run-l1","action":{"type":"egress","capability":"triage-alert","crossing_egress_tier":"II","payload_egress_tier":"II"},"expect":{"decision":"allow","rule_id":"R4","reason":"egress_within_boundary","egress_tier_seen":"II"}},
-  {"id":"S-R4-02","identity":"run-l1","action":{"type":"egress","capability":"triage-alert","crossing_egress_tier":"II","payload_egress_tier":"III"},"expect":{"decision":"deny","rule_id":"R4","reason":"egress_violation","egress_tier_seen":"III"}},
-  {"id":"S-R4-03","xfail":true,"identity":"run-l1","action":{"type":"egress","capability":"triage-alert","crossing_egress_tier":"II","payload_egress_tier":"II","payload":{"label":"II","embedded_secret_tier":"III"}},"expect":{"decision":"deny","rule_id":"R4","reason":"payload_classification_required","egress_tier_seen":"III"}},
+  {"id":"S-R4-02","identity":"run-l1","action":{"type":"egress","capability":"triage-alert","crossing_egress_tier":"II","payload_egress_tier":"I"},"expect":{"decision":"deny","rule_id":"R4","reason":"egress_violation","egress_tier_seen":"I"}},
+  {"id":"S-R4-03","identity":"run-l1","action":{"type":"egress","capability":"triage-alert","crossing_egress_tier":"II","payload_egress_tier":"II","payload":{"label":"II","message":"api_secret = \"credential-value-12345\""}},"expect":{"decision":"deny","rule_id":"R4","reason":"egress_violation","egress_tier_seen":"I","detector_id":"det:credential-pattern"}},
 
   {"id":"S-R5-01","identity":"run-l1","action":{"type":"continuity","endpoint":"primary","suspended":true},"expect":{"decision":"allow","rule_id":"R5","reason":"suspension_reroute","target":"secondary"}},
   {"id":"S-R5-02","identity":"run-l1","action":{"type":"continuity","endpoint":"secondary","suspended":true},"expect":{"decision":"deny","rule_id":"R5","reason":"no_fallback"}},

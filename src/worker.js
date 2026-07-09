@@ -60,10 +60,16 @@ async function handleBoundaryRequest(request, env) {
   const result = await evaluateBoundary(identityId, action);
   const identity = identityRecord(identityId);
   const capability = capabilityRecord(action.capability);
-  const audit = buildAuditRecord(identity, action, result, capability);
+  const auditChain = result.audit_steps?.map((step) =>
+    buildAuditRecord(identity, step.action, step.result, capabilityRecord(step.action.capability))) ?? null;
+  const audit = auditChain?.at(-1) ?? buildAuditRecord(identity, action, result, capability);
 
-  emitAudit(env, audit);
-  return jsonRpcResult(message.id, { ...result, audit });
+  for (const record of auditChain ?? [audit]) emitAudit(env, record);
+  return jsonRpcResult(message.id, {
+    ...result,
+    audit,
+    ...(auditChain ? { audit_chain: auditChain } : {})
+  });
 }
 
 function buildAuditRecord(identity, action, result, capability) {
@@ -74,7 +80,9 @@ function buildAuditRecord(identity, action, result, capability) {
     action,
     decision: result.decision,
     rule_id: result.rule_id,
-    egress_tier_seen: action.payload_egress_tier ?? capability?.egress_tier ?? null,
+    egress_tier_seen: result.egress_tier_seen ?? capability?.egress_tier ?? null,
+    detector_id: result.detector_id ?? null,
+    obligation: result.obligation ?? null,
     timestamp: new Date().toISOString()
   };
 }
@@ -90,6 +98,8 @@ function emitAudit(env, audit) {
       audit.decision,
       audit.rule_id,
       audit.egress_tier_seen ?? "",
+      audit.detector_id ?? "",
+      JSON.stringify(audit.obligation),
       audit.timestamp
     ],
     doubles: []

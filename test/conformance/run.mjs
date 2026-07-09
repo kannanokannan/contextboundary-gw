@@ -32,6 +32,12 @@ for (const scenario of scenarios) {
     if (scenario.expect.egress_tier_seen !== undefined) {
       assert.equal(result.audit?.egress_tier_seen, scenario.expect.egress_tier_seen, `${scenario.id}: egress_tier_seen`);
     }
+    if (scenario.expect.detector_id !== undefined) {
+      assert.equal(result.audit?.detector_id, scenario.expect.detector_id, `${scenario.id}: detector_id`);
+    }
+    if (scenario.expect.effective_tier !== undefined) {
+      assert.equal(result.effective_tier, scenario.expect.effective_tier, `${scenario.id}: effective_tier`);
+    }
     if (scenario.expect.capabilities !== undefined) {
       assert.deepEqual(result.capabilities, scenario.expect.capabilities, `${scenario.id}: discovery set`);
     }
@@ -59,8 +65,18 @@ const summary = {
   xfail: results.filter((result) => result.status === "xfail").length,
   xpass: results.filter((result) => result.status === "xpass").length
 };
+const families = Object.fromEntries(
+  ["R1", "R2", "R3", "R4", "R5", "AUD"].map((family) => {
+    const familyResults = results.filter((result) => result.id.startsWith(`S-${family}-`));
+    return [family, {
+      green: familyResults.filter((result) => result.status === "green").length,
+      red: familyResults.filter((result) => result.status === "red").length,
+      xfail: familyResults.filter((result) => result.status === "xfail").length
+    }];
+  })
+);
 
-console.log(JSON.stringify({ target, total: results.length, summary, results }, null, 2));
+console.log(JSON.stringify({ target, total: results.length, summary, families, results }, null, 2));
 process.exitCode = summary.red > 0 || summary.xpass > 0 ? 1 : 0;
 
 async function callGateway(url, scenario, policy) {
@@ -103,6 +119,8 @@ function assertAudit(audit, scenario) {
     "decision",
     "rule_id",
     "egress_tier_seen",
+    "detector_id",
+    "obligation",
     "timestamp"
   ]) {
     assert.ok(Object.hasOwn(audit, field), `${scenario.id}: audit.${field} missing`);
