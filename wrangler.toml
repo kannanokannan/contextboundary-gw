@@ -6,9 +6,17 @@ workers_dev = true
 [vars]
 UPSTREAM_MCP_URL = "https://mcp.context-stack.org/mcp"
 
+[[analytics_engine_datasets]]
+binding = "AUDIT"
+dataset = "contextboundary_gw_audit"
+
 [env.staging]
 name = "contextboundary-gw-staging"
 workers_dev = true
 
 [env.staging.vars]
 UPSTREAM_MCP_URL = "https://mcp.context-stack.org/mcp"
+
+[[env.staging.analytics_engine_datasets]]
+binding = "AUDIT"
+dataset = "contextboundary_gw_audit_staging"

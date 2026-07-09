@@ -1,0 +1,115 @@
+{
+  "metadata": {
+    "name": "P-STRICT",
+    "description": "Strict conformance fixture",
+    "default_decision": "deny"
+  },
+  "tiers": {
+    "T0": 0,
+    "T1": 1,
+    "T2": 2,
+    "T3": 3
+  },
+  "egress_tiers": {
+    "I": 0,
+    "II": 1,
+    "III": 2
+  },
+  "identities": {
+    "agent:run-l1": {
+      "id": "agent:run-l1",
+      "accountable_owner": "role:run-lead-apac",
+      "autonomy_tier": "T1",
+      "trusted_sources": [
+        "mcp:self"
+      ],
+      "tier_ordinal": 1
+    },
+    "agent:run-l3": {
+      "id": "agent:run-l3",
+      "accountable_owner": "role:run-lead-apac",
+      "autonomy_tier": "T3",
+      "trusted_sources": [
+        "mcp:self"
+      ],
+      "tier_ordinal": 3
+    },
+    "agent:run-l3v": {
+      "id": "agent:run-l3v",
+      "accountable_owner": "role:run-lead-apac",
+      "autonomy_tier": "T3",
+      "trusted_sources": [
+        "mcp:self",
+        "mcp:vendor"
+      ],
+      "tier_ordinal": 3
+    }
+  },
+  "capabilities": {
+    "triage-alert": {
+      "id": "triage-alert",
+      "source": "mcp:self",
+      "required_tier": "T1",
+      "discover_min_tier": "T1",
+      "egress_tier": "II",
+      "requires_approval": false,
+      "required_tier_ordinal": 1,
+      "discover_min_tier_ordinal": 1
+    },
+    "apply-change": {
+      "id": "apply-change",
+      "source": "mcp:self",
+      "required_tier": "T3",
+      "discover_min_tier": "T2",
+      "egress_tier": "II",
+      "requires_approval": true,
+      "required_tier_ordinal": 3,
+      "discover_min_tier_ordinal": 2
+    },
+    "read-secrets": {
+      "id": "read-secrets",
+      "source": "mcp:vendor",
+      "required_tier": "T3",
+      "discover_min_tier": "T3",
+      "egress_tier": "III",
+      "requires_approval": true,
+      "required_tier_ordinal": 3,
+      "discover_min_tier_ordinal": 3
+    }
+  },
+  "endpoints": {
+    "primary": {
+      "id": "primary",
+      "continuity_class": "export-exposed",
+      "zone": "II",
+      "fallbacks": [
+        "secondary"
+      ]
+    },
+    "secondary": {
+      "id": "secondary",
+      "continuity_class": "domestic",
+      "zone": "II",
+      "fallbacks": []
+    },
+    "loose": {
+      "id": "loose",
+      "continuity_class": "domestic",
+      "zone": "I",
+      "fallbacks": []
+    }
+  },
+  "audit": {
+    "emit": [
+      "agent_id",
+      "accountable_owner",
+      "tier_in_force",
+      "action",
+      "decision",
+      "rule_id",
+      "egress_tier_seen",
+      "timestamp"
+    ],
+    "sink": "analytics-engine"
+  }
+}

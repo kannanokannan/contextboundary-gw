@@ -1,15 +1,17 @@
 # contextboundary-gw
 
-Transparent ContextBoundary MCP gateway scaffold for future policy enforcement.
+ContextBoundary MCP gateway with a deploy-time policy compiler and an initial Rego WASM enforcement path.
 
-This phase is intentionally pass-through only. The Worker sits in front of an MCP server, forwards MCP requests unchanged to `UPSTREAM_MCP_URL`, and returns upstream responses unchanged. No policy filtering, approval logic, identity enforcement, egress filtering, or audit persistence is implemented in this phase.
+The Worker still forwards ordinary MCP traffic unchanged to `UPSTREAM_MCP_URL`. The `boundary/evaluate` method now evaluates R1 identity binding and R3 tier gates against the compiled P-STRICT policy. Approval obligations are converted to the gateway-level `approve` outcome outside Rego. Discovery filtering, egress enforcement, and continuity enforcement remain intentionally unimplemented.
 
 ## Layout
 
 - `src/` - Worker entry and transparent upstream proxy
-- `policy/` - empty placeholder for a later ratified policy schema
-- `audit/` - empty placeholder for a later audit sink implementation
-- `test/conformance/` - shell harness for scenario-based conformance tests
+- `docs/` - draft policy schema and conformance scenarios
+- `policy/` - deploy-time YAML policy input
+- `src/policy/compile/` - engine-neutral policy compiler inputs
+- `src/policy/generated/` - generated Rego, data document, and WASM module
+- `test/conformance/` - red/green/xfail conformance harness
 
 ## Local Test
 
@@ -17,4 +19,4 @@ This phase is intentionally pass-through only. The Worker sits in front of an MC
 npm test -- --target https://contextboundary-gw-staging.kannanokannan.workers.dev/mcp
 ```
 
-The current conformance scenarios are smoke-only and expect transparent proxy behavior.
+The harness currently contains every named draft scenario. Red results are the remaining Phase B implementation work, and S-R4-03 remains an expected failure until the payload-classification gap is resolved.

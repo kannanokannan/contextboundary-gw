@@ -1,6 +1,3 @@
 node_modules/
+.policy-build/
 .wrangler/
-.dev.vars
-*.log
-dist/
-tmp/

@@ -3,12 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Transparent ContextBoundary MCP gateway scaffold for future policy enforcement.",
+  "description": "ContextBoundary MCP gateway with compiled policy enforcement.",
   "license": "Apache-2.0",
   "scripts": {
+    "compile:policy": "node scripts/compile-policy.mjs",
     "dev": "npx wrangler dev",
     "test": "node test/conformance/run.mjs",
+    "predeploy": "npm run compile:policy",
     "deploy": "npx wrangler deploy"
+  },
+  "dependencies": {
+    "@open-policy-agent/opa-wasm": "^1.10.0",
+    "yaml": "^2.9.0"
   },
   "engines": {
     "node": ">=20"
