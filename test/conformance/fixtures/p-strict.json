@@ -1,0 +1,105 @@
+{
+  "apiVersion": "contextboundary/v0",
+  "kind": "BoundaryPolicy",
+  "metadata": {
+    "name": "P-STRICT",
+    "description": "Strict conformance fixture",
+    "default_decision": "deny"
+  },
+  "tiers": [
+    {"id": "T0"},
+    {"id": "T1"},
+    {"id": "T2"},
+    {"id": "T3"}
+  ],
+  "egress_tiers": [
+    {"id": "I"},
+    {"id": "II"},
+    {"id": "III"}
+  ],
+  "identities": {
+    "run-l1": {
+      "id": "agent:run-l1",
+      "accountable_owner": "role:run-lead-apac",
+      "autonomy_tier": "T1",
+      "trusted_sources": ["mcp:self"]
+    },
+    "run-l3": {
+      "id": "agent:run-l3",
+      "accountable_owner": "role:run-lead-apac",
+      "autonomy_tier": "T3",
+      "trusted_sources": ["mcp:self"]
+    },
+    "run-l3v": {
+      "id": "agent:run-l3v",
+      "accountable_owner": "role:run-lead-apac",
+      "autonomy_tier": "T3",
+      "trusted_sources": ["mcp:self", "mcp:vendor"]
+    }
+  },
+  "capabilities": [
+    {
+      "id": "triage-alert",
+      "source": "mcp:self",
+      "required_tier": "T1",
+      "discover_min_tier": "T1",
+      "egress_tier": "II",
+      "requires_approval": false
+    },
+    {
+      "id": "apply-change",
+      "source": "mcp:self",
+      "required_tier": "T3",
+      "discover_min_tier": "T2",
+      "egress_tier": "II",
+      "requires_approval": true
+    },
+    {
+      "id": "read-secrets",
+      "source": "mcp:vendor",
+      "required_tier": "T3",
+      "discover_min_tier": "T3",
+      "egress_tier": "III",
+      "requires_approval": true
+    }
+  ],
+  "endpoints": [
+    {
+      "id": "primary",
+      "continuity_class": "export-exposed",
+      "zone": "II",
+      "fallbacks": ["secondary"]
+    },
+    {
+      "id": "secondary",
+      "continuity_class": "domestic",
+      "zone": "II",
+      "fallbacks": []
+    },
+    {
+      "id": "loose",
+      "continuity_class": "domestic",
+      "zone": "I",
+      "fallbacks": []
+    },
+    {
+      "id": "primary-loose-only",
+      "continuity_class": "export-exposed",
+      "zone": "II",
+      "fallbacks": ["loose"]
+    }
+  ],
+  "audit": {
+    "emit": [
+      "agent_id",
+      "accountable_owner",
+      "tier_in_force",
+      "action",
+      "decision",
+      "rule_id",
+      "egress_tier_seen",
+      "timestamp"
+    ],
+    "sink": "analytics-engine"
+  }
+}
