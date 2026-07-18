@@ -17,6 +17,7 @@ The normative policy and conformance specifications live in the ContextBoundary 
 - `src/policy/compile/` - engine-neutral policy compiler inputs
 - `src/policy/generated/` - generated Rego, data document, and WASM module
 - `test/conformance/` - red/green/xfail conformance harness
+- `examples/ams-ticket-change/` - runnable end-to-end demo: Governed AMS Ticket Change Agent (ContextOps gate → allow / approve / deny flows → audit receipts)
 
 ## Local Test
 

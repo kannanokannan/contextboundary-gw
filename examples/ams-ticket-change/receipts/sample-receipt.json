@@ -1,0 +1,26 @@
+{
+  "_comment": "Real receipt captured 2026-07-18 from a live run against contextboundary-gw-staging (Flow B — the high-risk change parked on deterministic approval). The receipt carries the approval obligation {approval_required, approver_role, reason, rule_id} per boundary-policy-spec §3.8.",
+  "flow": "B-approve",
+  "agent_id": "agent:run-l1",
+  "accountable_owner": "role:run-lead-apac",
+  "tier_in_force": "T1",
+  "action": {
+    "type": "invoke",
+    "capability": "apply-change",
+    "payload": {
+      "ticket": "INC-42137",
+      "change": "rotate smtp relay config"
+    }
+  },
+  "decision": "approve",
+  "rule_id": "R3",
+  "egress_tier_seen": "II",
+  "detector_id": null,
+  "obligation": {
+    "approver_role": "role:run-lead-apac",
+    "reason": "tier_escalation",
+    "approval_required": true,
+    "rule_id": "R3"
+  },
+  "timestamp": "2026-07-18T04:31:07.279Z"
+}
