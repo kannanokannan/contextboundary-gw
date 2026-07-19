@@ -9,6 +9,8 @@ import { existsSync } from "node:fs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..", "..");
 const calls = [];
+const testSealKey = process.env.TEST_AUDIT_SEAL_KEY;
+if (!testSealKey) throw new Error("TEST_AUDIT_SEAL_KEY is required for the local interception test");
 const upstream = createServer(async (request, response) => {
   const body = await readBody(request);
   const message = JSON.parse(body);
@@ -24,7 +26,7 @@ await listen(upstream);
 const upstreamPort = upstream.address().port;
 const gatewayPort = await availablePort();
 const wrangler = findWrangler();
-const worker = spawn(process.execPath, [wrangler, "dev", "--local", "--port", String(gatewayPort), "--compatibility-date", "2026-07-02", "--var", `UPSTREAM_MCP_URL:http://127.0.0.1:${upstreamPort}/mcp`, "--var", "AUDIT_SEAL_KEY:test-seal-key"], {
+const worker = spawn(process.execPath, [wrangler, "dev", "--local", "--port", String(gatewayPort), "--compatibility-date", "2026-07-02", "--var", `UPSTREAM_MCP_URL:http://127.0.0.1:${upstreamPort}/mcp`, "--var", `AUDIT_SEAL_KEY:${testSealKey}`], {
   cwd: repoRoot,
   stdio: ["ignore", "pipe", "pipe"]
 });

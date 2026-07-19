@@ -9,7 +9,9 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..", "..");
 const port = await availablePort();
 const wrangler = findWrangler();
-const worker = spawn(process.execPath, [wrangler, "dev", "--local", "--port", String(port), "--compatibility-date", "2026-07-02", "--var", "AUDIT_SEAL_KEY:test-seal-key"], {
+const testSealKey = process.env.TEST_AUDIT_SEAL_KEY;
+if (!testSealKey) throw new Error("TEST_AUDIT_SEAL_KEY is required for the local conformance test");
+const worker = spawn(process.execPath, [wrangler, "dev", "--local", "--port", String(port), "--compatibility-date", "2026-07-02", "--var", `AUDIT_SEAL_KEY:${testSealKey}`], {
   cwd: repoRoot,
   stdio: ["ignore", "pipe", "pipe"]
 });

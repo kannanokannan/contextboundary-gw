@@ -1,26 +1,92 @@
 {
-  "_comment": "Real receipt captured 2026-07-18 from a live run against contextboundary-gw-staging (Flow B — the high-risk change parked on deterministic approval). The receipt carries the approval obligation {approval_required, approver_role, reason, rule_id} per boundary-policy-spec §3.8.",
-  "flow": "B-approve",
-  "agent_id": "agent:run-l1",
-  "accountable_owner": "role:run-lead-apac",
-  "tier_in_force": "T1",
-  "action": {
-    "type": "invoke",
-    "capability": "apply-change",
-    "payload": {
-      "ticket": "INC-42137",
-      "change": "rotate smtp relay config"
+  "_comment": "D4 receipt emitted by a chained local gateway run for Flow B on 2026-07-19. It contains no raw ticket payload or credentials. Verify with an authorized HMAC key: node audit/verify-receipt.mjs examples/ams-ticket-change/receipts/sample-receipt.json --key <AUDIT_SEAL_KEY>.",
+  "version": "contextboundary-audit/v0",
+  "events": [
+    {
+      "session_id": "ams-inc-42137-flow-b",
+      "hash_alg": "sha-256",
+      "agent_id": "agent:run-l1",
+      "accountable_owner": "role:run-lead-apac",
+      "tier_in_force": "T1",
+      "policy_hash": "af756078cefdc9607d177accce6e6eafc033ad18bcd7a2cbc8a8aa42707f85bc",
+      "timestamp": "2026-07-19T02:29:45.094Z",
+      "span_id": "f96c1315-c442-4e99-bc77-ba549c9ee1fb",
+      "parent_span_id": null,
+      "seq": 0,
+      "event_type": "session.start",
+      "prev_hash": "34c15f0a9f215087d90bb4e6cf7a1b9a38296a4a43a02d0fb213b400f58fb572",
+      "action": { "type": "session.start" },
+      "decision": "allow",
+      "rule_id": "R1",
+      "reason": "session_opened",
+      "egress_tier_seen": null,
+      "detector_id": null,
+      "obligation": null,
+      "replay_inputs": {},
+      "event_hash": "ed290e69c53f01a55d8f0a9b4fa4a39523d3fad69c25c0c74cc5d16759a1a6bd"
+    },
+    {
+      "session_id": "ams-inc-42137-flow-b",
+      "hash_alg": "sha-256",
+      "agent_id": "agent:run-l1",
+      "accountable_owner": "role:run-lead-apac",
+      "tier_in_force": "T1",
+      "policy_hash": "af756078cefdc9607d177accce6e6eafc033ad18bcd7a2cbc8a8aa42707f85bc",
+      "timestamp": "2026-07-19T02:29:45.094Z",
+      "span_id": "571f0393-254b-42d3-8f79-226a43414fe7",
+      "parent_span_id": "f96c1315-c442-4e99-bc77-ba549c9ee1fb",
+      "seq": 1,
+      "event_type": "invoke",
+      "prev_hash": "ed290e69c53f01a55d8f0a9b4fa4a39523d3fad69c25c0c74cc5d16759a1a6bd",
+      "action": { "type": "invoke", "capability": "apply-change" },
+      "decision": "approve",
+      "rule_id": "R3",
+      "reason": "tier_escalation",
+      "egress_tier_seen": null,
+      "detector_id": null,
+      "obligation": {
+        "approver_role": "role:run-lead-apac",
+        "reason": "tier_escalation",
+        "approval_required": true,
+        "rule_id": "R3"
+      },
+      "replay_inputs": {
+        "crossing_egress_tier": null,
+        "payload_egress_tier": null,
+        "detector_firings": []
+      },
+      "event_hash": "73f3cd3ebb42454b2dc5710b152799ba6624bfacaa777f7185227e60d109d4b4"
+    },
+    {
+      "session_id": "ams-inc-42137-flow-b",
+      "hash_alg": "sha-256",
+      "agent_id": "agent:run-l1",
+      "accountable_owner": "role:run-lead-apac",
+      "tier_in_force": "T1",
+      "policy_hash": "af756078cefdc9607d177accce6e6eafc033ad18bcd7a2cbc8a8aa42707f85bc",
+      "timestamp": "2026-07-19T02:29:45.094Z",
+      "span_id": "330a7f05-024b-4173-aed9-738179c50cd2",
+      "parent_span_id": "f96c1315-c442-4e99-bc77-ba549c9ee1fb",
+      "seq": 2,
+      "event_type": "session.seal",
+      "prev_hash": "73f3cd3ebb42454b2dc5710b152799ba6624bfacaa777f7185227e60d109d4b4",
+      "action": { "type": "session.seal" },
+      "decision": "allow",
+      "rule_id": "R1",
+      "reason": "session_sealed",
+      "egress_tier_seen": null,
+      "detector_id": null,
+      "obligation": null,
+      "replay_inputs": {},
+      "event_count": 2,
+      "sealed_final_hash": "73f3cd3ebb42454b2dc5710b152799ba6624bfacaa777f7185227e60d109d4b4",
+      "retention": {
+        "policy": "retention-30d",
+        "expires_at": "2026-08-18T02:29:45.088Z"
+      },
+      "seal_method": "hmac-sha256",
+      "event_hash": "94a05ca9b5eaa321dbe9d24cb9d26f7f34d73bb8983f04d02d8680189a0ae14b",
+      "seal_sig": "9b764f8bd6d1684f38e50968644fabad3e9fd1a420a173d1b5ab5a8d3f12b895"
     }
-  },
-  "decision": "approve",
-  "rule_id": "R3",
-  "egress_tier_seen": "II",
-  "detector_id": null,
-  "obligation": {
-    "approver_role": "role:run-lead-apac",
-    "reason": "tier_escalation",
-    "approval_required": true,
-    "rule_id": "R3"
-  },
-  "timestamp": "2026-07-18T04:31:07.279Z"
+  ]
 }

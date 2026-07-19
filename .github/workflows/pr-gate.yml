@@ -12,6 +12,8 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      TEST_AUDIT_SEAL_KEY: ${{ secrets.TEST_AUDIT_SEAL_KEY || 'ci-throwaway-only' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
