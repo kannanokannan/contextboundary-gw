@@ -39,39 +39,41 @@ export default {
     }
 
     if (request.method === "POST") {
-      const method = request.headers.get("mcp-method");
-      if (method === "boundary/evaluate" || method === "boundary/benchmark") {
-        return handleBoundaryRequest(request, env);
-      }
+      const message = await readJsonRpcMessage(request);
+      const method = message?.method ?? request.headers.get("mcp-method");
+      if (method === "boundary/evaluate" || method === "boundary/benchmark") return message ? handleBoundaryRequest(message, request.headers, env) : jsonRpcError(null, -32600, "Invalid JSON-RPC request");
+      if (method === "tools/call") return message ? handleToolCall(message, request.headers, env) : jsonRpcError(null, -32600, "Invalid JSON-RPC request");
+      if (method === "tools/list") return message ? handleToolList(message, request.headers, request, env) : jsonRpcError(null, -32600, "Invalid JSON-RPC request");
     }
 
     return proxyMcpRequest(request, env);
   }
 };
 
-async function handleBoundaryRequest(request, env) {
-  const message = await request.json();
-  if (message.method === "boundary/benchmark") {
-    return jsonRpcResult(message.id, await benchmarkBoundary(message.params?.iterations));
-  }
-
-  const identityId = request.headers.get("boundary-agent-id") ?? "";
-  const action = message.params?.action ?? {};
-  const result = await evaluateBoundary(identityId, action);
-  const identity = identityRecord(identityId);
-  const capability = capabilityRecord(action.capability);
-  const auditChain = result.audit_steps?.map((step) =>
-    buildAuditRecord(identity, step.action, step.result, capabilityRecord(step.action.capability))) ?? null;
-  const audit = auditChain?.at(-1) ?? buildAuditRecord(identity, action, result, capability);
-
-  for (const record of auditChain ?? [audit]) emitAudit(env, record);
-  return jsonRpcResult(message.id, {
-    ...result,
-    audit,
-    ...(auditChain ? { audit_chain: auditChain } : {})
-  });
+async function handleBoundaryRequest(message, headers, env) {
+  if (message.method === "boundary/benchmark") return jsonRpcResult(message.id, await benchmarkBoundary(message.params?.iterations));
+  const identityId = headers.get("boundary-agent-id") ?? ""; const action = message.params?.action ?? {};
+  const { result, audit, auditChain } = await evaluateAndAudit(identityId, action, env);
+  return jsonRpcResult(message.id, { ...result, audit, ...(auditChain ? { audit_chain: auditChain } : {}) });
 }
 
+async function handleToolCall(message, headers, env) {
+  const identityId = headers.get("boundary-agent-id") ?? "", capability = message.params?.name;
+  if (typeof capability !== "string" || !capability) return jsonRpcError(message.id ?? null, -32602, "tools/call requires params.name");
+  const { result, audit } = await evaluateAndAudit(identityId, { type: "invoke", capability, payload: message.params?.arguments ?? {} }, env);
+  if (result.decision !== "allow") return jsonRpcResult(message.id ?? null, { ...result, audit });
+  return proxyMcpRequest(new Request("https://gateway.invalid/mcp", { method: "POST", headers, body: JSON.stringify(message) }), env);
+}
+
+async function handleToolList(message, headers, request, env) {
+  const identityId = headers.get("boundary-agent-id") ?? "", identity = identityRecord(identityId);
+  if (!identity) { const { result, audit } = await evaluateAndAudit(identityId, { type: "discover" }, env); return jsonRpcResult(message.id ?? null, { ...result, audit, tools: [] }); }
+  const discovery = await evaluateBoundary(identityId, { type: "discover" });
+  if (discovery.decision !== "allow") { const { audit } = await evaluateAndAudit(identityId, { type: "discover" }, env); return jsonRpcResult(message.id ?? null, { ...discovery, audit, tools: [] }); }
+  const upstreamResponse = await proxyMcpRequest(request, env); let upstreamMessage; try { upstreamMessage = await upstreamResponse.json(); } catch { return jsonRpcError(message.id ?? null, -32603, "Upstream tools/list response was not JSON"); }
+  const permitted = new Set(discovery.capabilities ?? []), tools = Array.isArray(upstreamMessage?.result?.tools) ? upstreamMessage.result.tools : [];
+  return jsonResponse({ ...upstreamMessage, result: { ...(upstreamMessage.result ?? {}), tools: tools.filter((tool) => permitted.has(tool?.name)) } });
+}
 function buildAuditRecord(identity, action, result, capability) {
   return {
     agent_id: identity?.id ?? null,
@@ -141,6 +143,9 @@ function jsonResponse(body, init = {}) {
 function jsonRpcResult(id, result) {
   return jsonResponse({ jsonrpc: "2.0", id, result });
 }
+
+function jsonRpcError(id, code, message) { return jsonResponse({ jsonrpc: "2.0", id, error: { code, message } }); }
+async function readJsonRpcMessage(request) { try { const message = await request.clone().json(); return message && typeof message === "object" ? message : null; } catch { return null; } }
 
 function withCors(response) {
   const headers = new Headers(response.headers);
