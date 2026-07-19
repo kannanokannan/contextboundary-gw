@@ -9,12 +9,17 @@
     "compile:policy": "node scripts/compile-policy.mjs",
     "dev": "npx wrangler dev",
     "test": "node test/conformance/run.mjs",
+    "test:conformance": "node test/conformance/local.mjs",
+    "test:interception": "node test/interception/run.mjs",
     "predeploy": "npm run compile:policy",
     "deploy": "npx wrangler deploy"
   },
   "dependencies": {
     "@open-policy-agent/opa-wasm": "^1.10.0",
     "yaml": "^2.9.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.105.0"
   },
   "engines": {
     "node": ">=20"
