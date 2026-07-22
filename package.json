@@ -12,6 +12,7 @@
     "test:conformance": "node test/conformance/local.mjs",
     "test:interception": "node test/interception/run.mjs",
     "test:receipts": "node test/receipts/run.mjs",
+    "test:intent-envelope": "node test/intent-envelope/run.mjs",
     "predeploy": "npm run compile:policy",
     "deploy": "npx wrangler deploy"
   },

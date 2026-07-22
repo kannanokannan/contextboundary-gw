@@ -10,7 +10,7 @@
   "context": {
     "context_owner": "role:run-lead-apac",
     "context_domain": "ams-run-mail",
-    "last_validated": "2026-07-16T09:00:00Z",
+    "last_validated": "2026-07-22T09:00:00Z",
     "max_age_hours": 72,
     "sources": [
       { "id": "cmdb:prod-mail-gateway", "trust": "trusted" },
@@ -20,8 +20,8 @@
   "operational_context": {
     "change_window": {
       "state": "open",
-      "opens": "2026-07-17T00:00:00Z",
-      "closes": "2026-07-19T00:00:00Z"
+      "opens": "2026-07-22T00:00:00Z",
+      "closes": "2026-07-23T00:00:00Z"
     },
     "cab_reference": "CAB-2026-0711-08"
   },
@@ -30,5 +30,22 @@
     "accountable_owner": "role:run-lead-apac",
     "autonomy_tier": "T1",
     "note": "The AMS Ticket Change Agent runs at T1 (least agency). apply-change requires T3 — the gateway forces deterministic approval."
+  },
+  "intent_envelope_template": {
+    "declared_by": "role:run-lead-apac",
+    "task_ref": "INC-42137",
+    "authorized": {
+      "capabilities": ["triage-alert", "apply-change"],
+      "sources": ["mcp:self"],
+      "endpoints": ["primary"],
+      "egress_tier_ceiling": "II",
+      "autonomy_tier_ceiling": "T1"
+    },
+    "limits": {
+      "max_actions": 3,
+      "expires_after_minutes": 15,
+      "drift_review_threshold": 3
+    },
+    "amendment_policy": "approval_required"
   }
 }

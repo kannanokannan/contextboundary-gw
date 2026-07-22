@@ -11,7 +11,9 @@ const port = await availablePort();
 const wrangler = findWrangler();
 const testSealKey = process.env.TEST_AUDIT_SEAL_KEY;
 if (!testSealKey) throw new Error("TEST_AUDIT_SEAL_KEY is required for the local conformance test");
-const worker = spawn(process.execPath, [wrangler, "dev", "--local", "--port", String(port), "--compatibility-date", "2026-07-02", "--var", `AUDIT_SEAL_KEY:${testSealKey}`], {
+const ownerBootstrapKey = process.env.TEST_INTENT_ENVELOPE_BOOTSTRAP_KEY;
+if (!ownerBootstrapKey) throw new Error("TEST_INTENT_ENVELOPE_BOOTSTRAP_KEY is required for the local conformance test");
+const worker = spawn(process.execPath, [wrangler, "dev", "--local", "--port", String(port), "--compatibility-date", "2026-07-02", "--var", `AUDIT_SEAL_KEY:${testSealKey}`, "--var", `INTENT_ENVELOPE_BOOTSTRAP_KEY:${ownerBootstrapKey}`], {
   cwd: repoRoot,
   stdio: ["ignore", "pipe", "pipe"]
 });
@@ -40,7 +42,8 @@ async function waitForGateway(target, child) {
     if (child.exitCode !== null) throw new Error(`Wrangler exited before starting:\n${workerOutput}`);
     try {
       const response = await fetch(target.replace(/\/mcp$/, "/health"), { signal: AbortSignal.timeout(1_000) });
-      if (response.ok) return;
+      const body = await response.json();
+      if (response.ok && body?.status === "ok") return;
     } catch {
       // The local Worker is still starting.
     }

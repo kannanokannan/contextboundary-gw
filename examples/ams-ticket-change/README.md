@@ -1,6 +1,6 @@
 # Governed AMS Ticket Change Agent
 
-A runnable demonstration of the stack: an AMS agent's actions on ticket **INC-42137** ("rotate SMTP relay credentials on the prod mail gateway") are transparently intercepted by the boundary, and every decision is deterministic and receipted.
+A runnable demonstration of the stack: an AMS agent's actions on ticket **INC-42137** ("rotate SMTP relay credentials on the prod mail gateway") are transparently intercepted by the boundary, constrained by an accountable-owner declared intent envelope, and deterministically receipted.
 
 **"I can run this, inspect the decision, and understand why the action was allowed or denied."** That is the whole point of this example.
 
@@ -21,10 +21,10 @@ A runnable demonstration of the stack: an AMS agent's actions on ticket **INC-42
 ## Run it
 
 ```bash
-node examples/ams-ticket-change/demo.mjs --target https://<your-gateway>/mcp --save-receipts
+BOUNDARY_OWNER_BOOTSTRAP_KEY=<owner-bootstrap-secret> node examples/ams-ticket-change/demo.mjs --target https://<your-gateway>/mcp --save-receipts
 ```
 
-No dependencies, Node 18+. Flags: `--stale` simulates expired context (the ContextOps gate blocks and the boundary is never consulted); `--save-receipts` writes the receipt chain to `receipts/`.
+No dependencies, Node 18+. The owner bootstrap secret is supplied through the environment, never committed in the manifest. Flags: `--stale` simulates expired context (the ContextOps gate blocks and the boundary is never consulted); `--save-receipts` writes the receipt chain to `receipts/`.
 
 Expected output:
 
@@ -43,15 +43,17 @@ Expected output:
 This gateway is an **AARM-aligned strict-determinism profile** (AARM v1.0, CSA — §6.1 Protocol Gateway architecture):
 
 - **R1 pre-execution interception** — every ordinary MCP `tools/call` is evaluated before forwarding; DENY and APPROVE never reach upstream, and `tools/list` is policy-filtered.
+- **R2 session context / R3 stated intent** — an accountable-owner declared, hash-frozen envelope and privacy-safe prior-action trace are present on every session decision. Base P-STRICT runs first; the envelope can only narrow the result. Missing or invalid envelopes fail closed.
 - **R5 tamper-evident receipts** — every decision issues a privacy-safe, sealed hash-chain receipt per `boundary-audit-spec.md` §5–§6; the verifier detects altered, dropped, reordered, or invalidly sealed events.
 - **R4 decisions** — ALLOW / DENY / STEP_UP (our `approve`) shown here; MODIFY and DEFER are v1.1 scope.
-- **R2 / R3 / R6** — session context, intent envelopes, and per-agent cryptographic identity are open gaps for the Core-partial profile.
+- **R6** — per-agent cryptographic identity remains an explicit v1.1 gap. The owner bootstrap proof protects envelope declaration; it is not an R6 agent-identity claim.
 
 **No AARM approval claim is made.** The claim is: AARM-aligned profile, Core-partial, gaps explicit, full Core targeted at v1.1. Egress-sovereignty tiers, the credential detector, and vendor-continuity are profile *extensions* in the space AARM leaves open.
 
 ## Current limitations (v0)
 
 - **Receipt sealing depends on deployment configuration.** `AUDIT_SEAL_KEY` must be configured as a Worker secret; a missing key fails receipt issuance closed. The shipped default is `hmac-sha256`, which is tamper-evident against outsiders and rogue processes; operator-independent anchoring remains a later profile choice.
+- **Intent scope is deterministic, not semantic.** The gateway blocks capabilities, sources, endpoints, egress, autonomy, budget, and expiry outside the frozen envelope. It deliberately does not infer semantic drift within an authorized set.
 - **Conformance ceiling holds:** AARM Core-partial + strict-determinism profile. No conformance/approval claim until external evidence review.
 
 

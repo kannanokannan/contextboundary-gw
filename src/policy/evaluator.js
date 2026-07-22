@@ -8,7 +8,7 @@ const detectorPatterns = policyData.egress_detectors.map((detector) => ({
   patterns: detector.pattern_set.patterns.map((pattern) => new RegExp(pattern, "i"))
 }));
 
-export async function evaluateBoundary(identityId, action) {
+export async function evaluateBoundary(identityId, action, sessionContext = {}) {
   const identity = identityRecord(identityId);
   if (action.type === "discover" && identity) return evaluateDiscovery(identity);
   if (action.type === "session" && identity) return evaluateSession(identityId, action);
@@ -19,6 +19,10 @@ export async function evaluateBoundary(identityId, action) {
   const evaluated = policy.evaluate({
     identity_id: identityId ?? "",
     action,
+    data: {
+      envelope: sessionContext.envelope ?? null,
+      session_trace: sessionContext.prior_action_trace ?? []
+    },
     effective_egress_protection: egress.protection,
     crossing_ceiling_protection: protectionFor(action.crossing_egress_tier)
   });

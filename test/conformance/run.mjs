@@ -103,10 +103,12 @@ async function callGateway(url, scenario, policy) {
     body: JSON.stringify(body)
   });
 
-  return {
-    status: response.status,
-    body: await response.json()
-  };
+  const text = await response.text();
+  try {
+    return { status: response.status, body: JSON.parse(text) };
+  } catch {
+    throw new Error(`gateway returned non-JSON HTTP ${response.status}: ${text.slice(0, 500)}`);
+  }
 }
 
 function assertAudit(audit, scenario) {

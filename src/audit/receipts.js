@@ -1,7 +1,9 @@
+import { canonicalize, hashIntentEnvelope, safeIntentEnvelope, sha256Hex } from "../intent/canonical.js";
+
 const encoder = new TextEncoder();
 const GENESIS_PREFIX = "cb-audit-genesis";
 
-export async function createSealedReceipt({ sessionId = crypto.randomUUID(), identity, action, result, policyHash, retention, sealKey }) {
+export async function createSealedReceipt({ sessionId = crypto.randomUUID(), identity, action, result, policyHash, retention, sealKey, envelopeContext = null }) {
   if (!sealKey) throw new Error("AUDIT_SEAL_KEY is required to issue a D4 receipt");
   const timestamp = new Date().toISOString();
   const sessionSpanId = crypto.randomUUID();
@@ -14,6 +16,7 @@ export async function createSealedReceipt({ sessionId = crypto.randomUUID(), ide
     policy_hash: policyHash,
     timestamp
   };
+  const envelope = envelopeContext?.envelope ? safeIntentEnvelope(envelopeContext.envelope) : null;
   const start = await hashEvent({
     ...base,
     span_id: sessionSpanId,
@@ -28,7 +31,12 @@ export async function createSealedReceipt({ sessionId = crypto.randomUUID(), ide
     egress_tier_seen: null,
     detector_id: null,
     obligation: null,
-    replay_inputs: {}
+    replay_inputs: {},
+    ...(envelope ? {
+      envelope_hash: envelopeContext.envelope_hash,
+      declared_by: envelope.declared_by,
+      expires_at: envelope.limits?.expires_at ?? null
+    } : {})
   });
   const decision = await hashEvent({
     ...base,
@@ -44,14 +52,38 @@ export async function createSealedReceipt({ sessionId = crypto.randomUUID(), ide
     egress_tier_seen: result.egress_tier_seen ?? null,
     detector_id: result.detector_id ?? null,
     obligation: result.obligation ?? null,
-    replay_inputs: replayInputs(action, result)
+    replay_inputs: replayInputs(action, result),
+    in_envelope: result.in_envelope === true,
+    envelope_failing_dimension: result.envelope_failing_dimension ?? null
   });
+  const intermediate = [start, decision];
+  if (result.envelope_amendment_required) {
+    intermediate.push(await hashEvent({
+      ...base,
+      span_id: crypto.randomUUID(),
+      seq: intermediate.length,
+      event_type: "envelope.amend",
+      prev_hash: intermediate.at(-1).event_hash,
+      parent_span_id: sessionSpanId,
+      action: { type: "envelope.amend" },
+      decision: "approve",
+      rule_id: "R3",
+      reason: "envelope_amendment_required",
+      egress_tier_seen: null,
+      detector_id: null,
+      obligation: result.obligation ?? null,
+      replay_inputs: {},
+      old_envelope_hash: envelopeContext?.envelope_hash ?? null,
+      new_envelope_hash: null,
+      amendment_status: "approval_required"
+    }));
+  }
   const sealDraft = await hashEvent({
     ...base,
     span_id: crypto.randomUUID(),
-    seq: 2,
+    seq: intermediate.length,
     event_type: "session.seal",
-    prev_hash: decision.event_hash,
+    prev_hash: intermediate.at(-1).event_hash,
     parent_span_id: sessionSpanId,
     action: { type: "session.seal" },
     decision: "allow",
@@ -61,14 +93,18 @@ export async function createSealedReceipt({ sessionId = crypto.randomUUID(), ide
     detector_id: null,
     obligation: null,
     replay_inputs: {},
-    event_count: 2,
-    sealed_final_hash: decision.event_hash,
+    event_count: intermediate.length,
+    sealed_final_hash: intermediate.at(-1).event_hash,
     retention,
     seal_method: "hmac-sha256"
   });
   const seal_sig = await hmacHex(sealKey, canonicalize(withoutHashAndSignature(sealDraft)));
   const seal = { ...sealDraft, seal_sig };
-  return { version: "contextboundary-audit/v0", events: [start, decision, seal] };
+  return {
+    version: "contextboundary-audit/v0",
+    ...(envelope ? { intent_envelope: envelope } : {}),
+    events: [...intermediate, seal]
+  };
 }
 
 export async function policyArtifactHash(policyData) {
@@ -81,6 +117,13 @@ export async function verifyReceipt(receipt, sealKey) {
   const sessionId = events[0]?.session_id;
   const policyHash = events[0]?.policy_hash;
   if (!sessionId || !policyHash) return invalid("event_altered", "session_id and policy_hash are required");
+  if (receipt.intent_envelope) {
+    const envelopeHash = await hashIntentEnvelope(receipt.intent_envelope);
+    if (events[0]?.envelope_hash !== envelopeHash) return invalid("envelope_tampered", "frozen envelope hash does not match");
+    if (events[0]?.declared_by !== receipt.intent_envelope.declared_by || events[0]?.expires_at !== receipt.intent_envelope.limits?.expires_at) {
+      return invalid("envelope_tampered", "receipt envelope metadata does not match");
+    }
+  }
 
   for (let index = 0; index < events.length; index += 1) {
     const event = events[index];
@@ -108,11 +151,7 @@ export async function verifyReceipt(receipt, sealKey) {
   return { valid: true, code: "intact", event_count: events.length };
 }
 
-export function canonicalize(value) {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalize).join(",")}]`;
-  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonicalize(value[key])}`).join(",")}}`;
-}
+export { canonicalize };
 
 async function hashEvent(event) {
   return { ...event, event_hash: await sha256Hex(canonicalize(withoutHashAndSignature(event))) };
@@ -145,11 +184,6 @@ function eventTypeFor(action) {
 
 async function genesisHash(sessionId, policyHash) {
   return sha256Hex(`${GENESIS_PREFIX}${sessionId}${policyHash}`);
-}
-
-async function sha256Hex(value) {
-  const bytes = await crypto.subtle.digest("SHA-256", encoder.encode(value));
-  return toHex(new Uint8Array(bytes));
 }
 
 async function hmacHex(key, value) {

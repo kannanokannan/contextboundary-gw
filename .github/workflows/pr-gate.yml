@@ -14,6 +14,7 @@ jobs:
     timeout-minutes: 10
     env:
       TEST_AUDIT_SEAL_KEY: ${{ secrets.TEST_AUDIT_SEAL_KEY || 'ci-throwaway-only' }}
+      TEST_INTENT_ENVELOPE_BOOTSTRAP_KEY: ${{ secrets.TEST_INTENT_ENVELOPE_BOOTSTRAP_KEY || 'ci-owner-bootstrap-throwaway-only' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,4 +29,5 @@ jobs:
       - run: npm run test:conformance
       - run: npm run test:interception
       - run: npm run test:receipts
+      - run: npm run test:intent-envelope
       - run: npm audit --omit=dev --audit-level=high

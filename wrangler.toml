@@ -10,12 +10,24 @@ UPSTREAM_MCP_URL = "https://mcp.context-stack.org/mcp"
 binding = "AUDIT"
 dataset = "contextboundary_gw_audit"
 
+[[durable_objects.bindings]]
+name = "INTENT_SESSIONS"
+class_name = "IntentSession"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["IntentSession"]
+
 [env.staging]
 name = "contextboundary-gw-staging"
 workers_dev = true
 
 [env.staging.vars]
 UPSTREAM_MCP_URL = "https://mcp.context-stack.org/mcp"
+
+[[env.staging.durable_objects.bindings]]
+name = "INTENT_SESSIONS"
+class_name = "IntentSession"
 
 [[env.staging.analytics_engine_datasets]]
 binding = "AUDIT"
