@@ -11,6 +11,7 @@ import { evaluateIntentEnvelope } from "./intent/envelope.js";
 import { gatewayKeyMaterial } from "./identity/gateway-key.js";
 import { verifyAgentSignature } from "./identity/signatures.js";
 import { applyDeclaredTransform, declaredTransforms, deferredCondition, resumeAction } from "./r4/transforms.js";
+import { exportOtlpReceipt } from "./r8/otel.js";
 export { IntentSession } from "./intent/session.js";
 
 const DEFAULT_UPSTREAM_MCP_URL = "https://mcp.context-stack.org/mcp";
@@ -61,31 +62,31 @@ export default {
 
       if (method === "boundary/evaluate" || method === "boundary/benchmark") {
         return message
-          ? handleBoundaryRequest(message, request.headers, env)
+          ? handleBoundaryRequest(message, request.headers, env, ctx)
           : jsonRpcError(null, -32600, "Invalid JSON-RPC request");
       }
 
       if (method === "boundary/session.start") {
         return message
-          ? handleSessionStart(message, request.headers, env)
+          ? handleSessionStart(message, request.headers, env, ctx)
           : jsonRpcError(null, -32600, "Invalid JSON-RPC request");
       }
 
       if (method === "boundary/deferred.resume") {
         return message
-          ? handleDeferredResume(message, request.headers, env)
+          ? handleDeferredResume(message, request.headers, env, ctx)
           : jsonRpcError(null, -32600, "Invalid JSON-RPC request");
       }
 
       if (method === "tools/call") {
         return message
-          ? handleToolCall(message, request.headers, env)
+          ? handleToolCall(message, request.headers, env, ctx)
           : jsonRpcError(null, -32600, "Invalid JSON-RPC request");
       }
 
       if (method === "tools/list") {
         return message
-          ? handleToolList(message, request.headers, request, env)
+          ? handleToolList(message, request.headers, request, env, ctx)
           : jsonRpcError(null, -32600, "Invalid JSON-RPC request");
       }
     }
@@ -94,14 +95,14 @@ export default {
   }
 };
 
-async function handleBoundaryRequest(message, headers, env) {
+async function handleBoundaryRequest(message, headers, env, ctx) {
   if (message.method === "boundary/benchmark") {
     return jsonRpcResult(message.id, await benchmarkBoundary(message.params?.iterations));
   }
 
   const identityId = headers.get("boundary-agent-id") ?? "";
   const action = message.params?.action ?? {};
-  const { result, audit, auditChain, receipt } = await evaluateAndAudit(identityId, action, env, headers.get("mcp-session-id") ?? undefined, headers);
+  const { result, audit, auditChain, receipt } = await evaluateAndAudit(identityId, action, env, headers.get("mcp-session-id") ?? undefined, headers, ctx);
   return jsonRpcResult(message.id, {
     ...result,
     audit,
@@ -110,7 +111,7 @@ async function handleBoundaryRequest(message, headers, env) {
   });
 }
 
-async function handleSessionStart(message, headers, env) {
+async function handleSessionStart(message, headers, env, ctx) {
   const identityId = headers.get("boundary-agent-id") ?? "";
   const identity = identityRecord(identityId);
   const sessionId = headers.get("mcp-session-id") ?? message.params?.intent_envelope?.session_id;
@@ -147,7 +148,7 @@ async function handleSessionStart(message, headers, env) {
   const policyHash = await policyArtifactHash(policyData);
   const receipt = await createReceipt(identity, { type: "session.start" }, result, policyHash, env, sessionId, started.ok ? started : null, agentAuth);
   const audit = receipt.events[1];
-  emitAudit(env, audit);
+  emitAudit(env, audit, receipt, ctx);
   return jsonRpcResult(message.id ?? null, {
     ...result,
     audit,
@@ -160,7 +161,7 @@ async function handleSessionStart(message, headers, env) {
   });
 }
 
-async function handleDeferredResume(message, headers, env) {
+async function handleDeferredResume(message, headers, env, ctx) {
   const identityId = headers.get("boundary-agent-id") ?? "";
   const identity = identityRecord(identityId);
   const sessionId = headers.get("mcp-session-id") ?? undefined;
@@ -190,11 +191,11 @@ async function handleDeferredResume(message, headers, env) {
   const policyHash = await policyArtifactHash(policyData);
   const receipt = await createReceipt(identity, signedAction, result, policyHash, env, sessionId, envelopeContext, agentAuth, r4Context);
   const audit = receipt.events[1];
-  emitAudit(env, audit);
+  emitAudit(env, audit, receipt, ctx);
   return jsonRpcResult(message.id ?? null, { ...result, audit, receipt });
 }
 
-async function handleToolCall(message, headers, env) {
+async function handleToolCall(message, headers, env, ctx) {
   const identityId = headers.get("boundary-agent-id") ?? "";
   const capability = message.params?.name;
   if (typeof capability !== "string" || !capability) {
@@ -206,7 +207,7 @@ async function handleToolCall(message, headers, env) {
     capability,
     payload: message.params?.arguments ?? {}
   };
-  const { result, audit, executionAction } = await evaluateAndAudit(identityId, action, env, headers.get("mcp-session-id") ?? undefined, headers);
+  const { result, audit, executionAction } = await evaluateAndAudit(identityId, action, env, headers.get("mcp-session-id") ?? undefined, headers, ctx);
   if (result.decision !== "allow") {
     return jsonRpcResult(message.id ?? null, { ...result, audit });
   }
@@ -219,15 +220,15 @@ async function handleToolCall(message, headers, env) {
   }), env);
 }
 
-async function handleToolList(message, headers, request, env) {
+async function handleToolList(message, headers, request, env, ctx) {
   const identityId = headers.get("boundary-agent-id") ?? "";
   const identity = identityRecord(identityId);
   if (!identity) {
-    const { result, audit } = await evaluateAndAudit(identityId, { type: "discover" }, env, headers.get("mcp-session-id") ?? undefined, headers);
+    const { result, audit } = await evaluateAndAudit(identityId, { type: "discover" }, env, headers.get("mcp-session-id") ?? undefined, headers, ctx);
     return jsonRpcResult(message.id ?? null, { ...result, audit, tools: [] });
   }
 
-  const discoveryAudit = await evaluateAndAudit(identityId, { type: "discover" }, env, headers.get("mcp-session-id") ?? undefined, headers);
+  const discoveryAudit = await evaluateAndAudit(identityId, { type: "discover" }, env, headers.get("mcp-session-id") ?? undefined, headers, ctx);
   const discovery = discoveryAudit.result;
   if (discovery.decision !== "allow") {
     return jsonRpcResult(message.id ?? null, { ...discovery, audit: discoveryAudit.audit, tools: [] });
@@ -259,7 +260,7 @@ async function handleToolList(message, headers, request, env) {
   });
 }
 
-async function evaluateAndAudit(identityId, action, env, sessionId, headers) {
+async function evaluateAndAudit(identityId, action, env, sessionId, headers, ctx) {
   const identity = identityRecord(identityId);
   const agentAuth = await authenticateAgentAction(identity, action, headers, env, sessionId);
   const sessionContext = agentAuth.ok && sessionId ? await readIntentSession(env, sessionId) : null;
@@ -317,7 +318,7 @@ async function evaluateAndAudit(identityId, action, env, sessionId, headers) {
   const receipt = await createReceipt(identity, action, result, policyHash, env, sessionId, envelopeContext, agentAuth, r4Context);
   const audit = auditChain?.at(-1) ?? receipt.events[1];
 
-  for (const record of auditChain ?? [audit]) emitAudit(env, record);
+  for (const record of auditChain ?? [audit]) emitAudit(env, record, receipt, ctx);
   return { result, audit, auditChain, receipt, envelopeContext, executionAction };
 }
 
@@ -399,23 +400,25 @@ function timingSafeEqual(left, right) {
   return difference === 0;
 }
 
-function emitAudit(env, audit) {
-  if (!env?.AUDIT) return;
-  env.AUDIT.writeDataPoint({
-    indexes: [audit.agent_id ?? "unbound"],
-    blobs: [
-      audit.accountable_owner ?? "",
-      audit.tier_in_force ?? "",
-      JSON.stringify(audit.action),
-      audit.decision,
-      audit.rule_id,
-      audit.egress_tier_seen ?? "",
-      audit.detector_id ?? "",
-      JSON.stringify(audit.obligation),
-      audit.timestamp
-    ],
-    doubles: []
-  });
+function emitAudit(env, audit, receipt = null, ctx = null) {
+  if (env?.AUDIT) {
+    env.AUDIT.writeDataPoint({
+      indexes: [audit.agent_id ?? "unbound"],
+      blobs: [
+        audit.accountable_owner ?? "",
+        audit.tier_in_force ?? "",
+        JSON.stringify(audit.action),
+        audit.decision,
+        audit.rule_id,
+        audit.egress_tier_seen ?? "",
+        audit.detector_id ?? "",
+        JSON.stringify(audit.obligation),
+        audit.timestamp
+      ],
+      doubles: []
+    });
+  }
+  if (receipt && ctx?.waitUntil) ctx.waitUntil(exportOtlpReceipt(receipt, env));
 }
 
 async function proxyMcpRequest(request, env) {

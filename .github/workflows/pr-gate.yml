@@ -32,4 +32,5 @@ jobs:
       - run: npm run test:intent-envelope
       - run: npm run test:r6
       - run: npm run test:r4
+      - run: npm run test:r8
       - run: npm audit --omit=dev --audit-level=high
