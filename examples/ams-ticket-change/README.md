@@ -72,6 +72,7 @@ This gateway is an **AARM-aligned, Core-partial, strict-determinism profile**:
 - **Deployment remains pending.** Kannan must configure the production `GATEWAY_ED25519_PRIVATE_JWK` Worker secret and the trusted public agent-key registry. Missing key material fails closed; no private key is stored in this repository.
 - **Intent scope is deterministic, not semantic.** The gateway blocks capabilities, sources, endpoints, egress, autonomy, budget, and expiry outside the frozen envelope. It deliberately does not infer semantic drift within an authorized set.
 - **R6 scope is agent-key identity, not human identity.** Human or organization federation is a later concern.
+- **R8 telemetry export remains open.** The receipt trace is structured for export, but an OpenTelemetry binding has not yet been implemented.
 - **Conformance ceiling holds:** AARM-aligned, Core-partial, strict-determinism profile. No conformance/approval claim without external evidence review.
 
 ## Files
