@@ -4,7 +4,7 @@ A runnable demonstration of an AMS agent's actions on ticket **INC-42137** ("rot
 
 **"I can run this, inspect the decision, and understand why the action was allowed or denied."** That is the point of this example.
 
-> **Honest state (v1.1, done-undeployed).** The repository implements the governance path, including R6 signatures and Ed25519 receipt seals. A live deployment still requires Kannan to configure the production Worker secrets and trusted public-key registry; no production private key is in this repository.
+> **Honest state (v1.1, done-undeployed).** The repository implements the R1-R6 governance path, including deterministic MODIFY and DEFER outcomes, R6 signatures, Ed25519 receipt seals, and an R8 OpenTelemetry mirror. A live deployment still requires Kannan to configure the production Worker secrets and trusted public-key registry; no production private key is in this repository.
 
 ## What it demonstrates
 
@@ -61,7 +61,7 @@ This gateway is an **AARM-aligned, Core-partial, strict-determinism profile**:
 
 - **R1 pre-execution interception** — every ordinary MCP `tools/call` is evaluated before forwarding; DENY and APPROVE never reach upstream, and `tools/list` is policy-filtered.
 - **R2 session context / R3 stated intent** — an accountable-owner-declared, hash-frozen envelope and privacy-safe prior-action trace are present for each governed session. Base P-STRICT runs first; the envelope can only narrow the result. Missing or invalid envelopes fail closed.
-- **R4 decisions** — ALLOW, DENY, and STEP_UP (shown as `approve`) are present; MODIFY and DEFER remain v1.1 scope.
+- **R4 decisions** — ALLOW, DENY, STEP_UP, MODIFY, and DEFER are implemented. The three AMS flows above focus on allow/approval/deny; the runnable R4 suite exercises declared transforms and durable condition-gated resumes.
 - **R5 tamper-evident receipts** — privacy-safe hash-chain receipts detect altered, dropped, reordered, and invalidly sealed events.
 - **R6 per-agent cryptographic identity** — a receipt proves that the key registered to agent X signed the action, and the Ed25519 gateway seal is independently verifiable with public keys. It does **not** prove which human is behind agent X; federation is outside v1.1.
 
@@ -72,8 +72,8 @@ This gateway is an **AARM-aligned, Core-partial, strict-determinism profile**:
 - **Deployment remains pending.** Kannan must configure the production `GATEWAY_ED25519_PRIVATE_JWK` Worker secret and the trusted public agent-key registry. Missing key material fails closed; no private key is stored in this repository.
 - **Intent scope is deterministic, not semantic.** The gateway blocks capabilities, sources, endpoints, egress, autonomy, budget, and expiry outside the frozen envelope. It deliberately does not infer semantic drift within an authorized set.
 - **R6 scope is agent-key identity, not human identity.** Human or organization federation is a later concern.
-- **R8 telemetry export remains open.** The receipt trace is structured for export, but an OpenTelemetry binding has not yet been implemented.
-- **Conformance ceiling holds:** AARM-aligned, Core-partial, strict-determinism profile. No conformance/approval claim without external evidence review.
+- **R8 is a non-authoritative mirror.** The OTLP/HTTP binding exports receipt metadata only; the JSONL/receipt record remains the system of record, and export failure never blocks a decision.
+- **Conformance ceiling holds:** AARM-aligned, Core-partial, strict-determinism profile. R1-R6 implementation is complete, but no conformance/approval claim is made without production operation and external evidence review.
 
 ## Files
 
@@ -83,3 +83,11 @@ This gateway is an **AARM-aligned, Core-partial, strict-determinism profile**:
 - [`receipts/sample-public-keys.json`](./receipts/sample-public-keys.json) — public keys for independent verification
 - Policy: compiled P-STRICT fixture [`test/conformance/fixtures/p-strict.json`](../../test/conformance/fixtures/p-strict.json)
 - Conformance: [`test/conformance/scenarios.json`](../../test/conformance/scenarios.json) and R6 tests in [`test/r6`](../../test/r6)
+
+## Fresh-clone proof
+
+From a fresh checkout, this single command installs the test runtime and demonstrates ALLOW, APPROVE, DENY, MODIFY, DEFER/resume, and public-key receipt verification with runtime-only test keys:
+
+```bash
+npm ci && npm run test:r4 && npm run test:r6
+```
