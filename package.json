@@ -13,6 +13,7 @@
     "test:interception": "node test/interception/run.mjs",
     "test:receipts": "node test/receipts/run.mjs",
     "test:intent-envelope": "node test/intent-envelope/run.mjs",
+    "test:r6": "node test/r6/run.mjs",
     "predeploy": "npm run compile:policy",
     "deploy": "npx wrangler deploy"
   },

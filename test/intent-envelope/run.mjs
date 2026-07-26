@@ -7,6 +7,7 @@ import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { verifyReceipt } from "../../src/audit/receipts.js";
 import { hashIntentEnvelope, hmacSha256Hex } from "../../src/intent/canonical.js";
+import { createEphemeralR6Fixtures, signedHeaders, thirdPartyPublicKeys, workerR6Vars } from "../helpers/r6.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, "..", "..");
@@ -15,9 +16,14 @@ if (!sealKey) throw new Error("TEST_AUDIT_SEAL_KEY is required for intent-envelo
 const ownerBootstrapKey = process.env.TEST_INTENT_ENVELOPE_BOOTSTRAP_KEY;
 if (!ownerBootstrapKey) throw new Error("TEST_INTENT_ENVELOPE_BOOTSTRAP_KEY is required for intent-envelope verification");
 const testRunId = crypto.randomUUID();
+const r6 = await createEphemeralR6Fixtures();
+const thirdPartyKeys = thirdPartyPublicKeys(r6);
+const signatureSeq = new Map();
 
 const port = await availablePort();
-const worker = spawn(process.execPath, [findWrangler(), "dev", "--local", "--port", String(port), "--compatibility-date", "2026-07-02", "--var", `AUDIT_SEAL_KEY:${sealKey}`, "--var", `INTENT_ENVELOPE_BOOTSTRAP_KEY:${ownerBootstrapKey}`], {
+const workerArgs = [findWrangler(), "dev", "--local", "--port", String(port), "--compatibility-date", "2026-07-02", "--var", `INTENT_ENVELOPE_BOOTSTRAP_KEY:${ownerBootstrapKey}`];
+for (const value of workerR6Vars(r6)) workerArgs.push("--var", value);
+const worker = spawn(process.execPath, workerArgs, {
   cwd: repoRoot,
   stdio: ["ignore", "pipe", "pipe"]
 });
@@ -97,7 +103,7 @@ try {
 
   const alteredEnvelope = structuredClone(inEnvelope.receipt);
   alteredEnvelope.intent_envelope.authorized.capabilities = ["apply-change"];
-  assert.equal((await verifyReceipt(alteredEnvelope, sealKey)).code, "envelope_tampered", "S-R3-ENV-tamper: verifier detects envelope hash mismatch");
+  assert.equal((await verifyReceipt(alteredEnvelope, thirdPartyKeys)).code, "envelope_tampered", "S-R3-ENV-tamper: verifier detects envelope hash mismatch");
 
   console.log(JSON.stringify({ status: "green", assertions: 28, invariant: "base-policy-first-envelope-narrows-only" }, null, 2));
 } finally {
@@ -155,13 +161,18 @@ async function evaluate(target, sessionId, action) {
 }
 
 async function call(target, sessionId, method, params, extraHeaders = {}) {
+  const scopedSession = scopedSessionId(sessionId);
+  const action = method === "boundary/session.start" ? { type: "session.start" } : params.action;
+  const seq = signatureSeq.get(scopedSession) ?? 0;
+  signatureSeq.set(scopedSession, seq + 1);
   const response = await fetch(target, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       "mcp-method": method,
       "boundary-agent-id": "agent:run-l1",
-      "mcp-session-id": scopedSessionId(sessionId),
+      "mcp-session-id": scopedSession,
+      ...await signedHeaders(r6, { sessionId: scopedSession, seq, action }),
       ...extraHeaders
     },
     body: JSON.stringify({ jsonrpc: "2.0", id: `${method}:${sessionId}`, method, params })

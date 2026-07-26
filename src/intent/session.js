@@ -7,6 +7,16 @@ import {
 } from "./envelope.js";
 
 export class IntentSession extends DurableObject {
+  async consumeNonce({ nonce, timestamp }) {
+    const nonceState = (await this.ctx.storage.get("nonce_state")) ?? { nonces: [] };
+    const now = Date.now();
+    const retained = nonceState.nonces.filter((entry) => entry.expires_at > now);
+    if (retained.some((entry) => entry.nonce === nonce)) return { ok: false, reason: "replay_detected" };
+    retained.push({ nonce, expires_at: Math.max(now, Date.parse(timestamp)) + 10 * 60_000 });
+    await this.ctx.storage.put("nonce_state", { nonces: retained });
+    return { ok: true };
+  }
+
   async start({ identity, sessionId, envelope }) {
     const existing = await this.ctx.storage.get("state");
     if (existing) return { ok: false, reason: "session_already_frozen" };

@@ -1,6 +1,6 @@
 [
   {"id":"S-R1-01","identity":"run-l1","action":{"type":"invoke","capability":"triage-alert","payload":{}},"expect":{"decision":"allow","rule_id":"R3","reason":"tier_satisfied","accountable_owner":"role:run-lead-apac"}},
-  {"id":"S-R1-02","identity":null,"action":{"type":"invoke","capability":"triage-alert","payload":{}},"expect":{"decision":"deny","rule_id":"R1","reason":"unbound_identity"}},
+  {"id":"S-R1-02","identity":null,"action":{"type":"invoke","capability":"triage-alert","payload":{}},"expect":{"decision":"deny","rule_id":"E1","reason":"identity_unverified"}},
   {"id":"S-R1-03","identity":"run-l1","action":{"type":"invoke","capability":"triage-alert","payload":{"accountable_owner":"role:other-owner"}},"expect":{"decision":"allow","rule_id":"R3","reason":"tier_satisfied","accountable_owner":"role:run-lead-apac"}},
 
   {"id":"S-R2-01","identity":"run-l1","action":{"type":"discover"},"expect":{"decision":"allow","rule_id":"R2","reason":"discovery_filtered","capabilities":["triage-alert"]}},

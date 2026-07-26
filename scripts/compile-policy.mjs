@@ -83,6 +83,12 @@ function validatePolicy(value) {
   }
   for (const identity of value.identities) {
     if (!identity.accountable_owner) throw new Error(`Identity ${identity.id} has no accountable_owner`);
+    if (!Array.isArray(identity.agent_keys) || identity.agent_keys.length === 0) throw new Error(`Identity ${identity.id} has no registered agent public key`);
+    for (const key of identity.agent_keys) {
+      if (!key?.key_id || key?.public_jwk?.kty !== "OKP" || key?.public_jwk?.crv !== "Ed25519" || typeof key?.public_jwk?.x !== "string" || Object.hasOwn(key.public_jwk, "d")) {
+        throw new Error(`Identity ${identity.id} has an invalid Ed25519 public key record`);
+      }
+    }
   }
 }
 

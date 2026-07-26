@@ -2,16 +2,20 @@
 import { readFile } from "node:fs/promises";
 import { verifyReceipt } from "../src/audit/receipts.js";
 
-const [receiptPath] = process.argv.slice(2).filter((arg) => !arg.startsWith("--"));
-const keyIndex = process.argv.indexOf("--key");
-const sealKey = keyIndex >= 0 ? process.argv[keyIndex + 1] : process.env.AUDIT_SEAL_KEY;
+const args = process.argv.slice(2);
+const receiptPath = args.find((arg) => !arg.startsWith("--"));
+const keysIndex = args.indexOf("--public-keys");
+const publicKeysPath = keysIndex >= 0 ? args[keysIndex + 1] : undefined;
 
-if (!receiptPath || !sealKey) {
-  console.error("Usage: node audit/verify-receipt.mjs <receipt.json> --key <seal-key>");
+if (!receiptPath || !publicKeysPath) {
+  console.error("Usage: node audit/verify-receipt.mjs <receipt.json> --public-keys <public-keys.json>");
   process.exit(2);
 }
 
-const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
-const result = await verifyReceipt(receipt, sealKey);
+const [receipt, publicKeys] = await Promise.all([
+  readFile(receiptPath, "utf8").then(JSON.parse),
+  readFile(publicKeysPath, "utf8").then(JSON.parse)
+]);
+const result = await verifyReceipt(receipt, publicKeys);
 console.log(JSON.stringify(result, null, 2));
 process.exitCode = result.valid ? 0 : 1;

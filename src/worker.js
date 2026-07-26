@@ -7,6 +7,8 @@ import {
 import policyData from "./policy/generated/data.json";
 import { createSealedReceipt, policyArtifactHash } from "./audit/receipts.js";
 import { hashIntentEnvelope, hmacSha256Hex } from "./intent/canonical.js";
+import { gatewayKeyMaterial } from "./identity/gateway-key.js";
+import { verifyAgentSignature } from "./identity/signatures.js";
 export { IntentSession } from "./intent/session.js";
 
 const DEFAULT_UPSTREAM_MCP_URL = "https://mcp.context-stack.org/mcp";
@@ -19,13 +21,22 @@ export default {
 
     const url = new URL(request.url);
     if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/health")) {
+      const gatewayKey = gatewayKeyMaterial(env);
       return jsonResponse({
         status: "ok",
         name: "contextboundary-gw",
         mode: "transparent-proxy",
         upstream: upstreamUrl(env).toString(),
-        mcp: "/mcp"
+        mcp: "/mcp",
+        gateway_key_id: gatewayKey?.key_id ?? null
       });
+    }
+
+    if (request.method === "GET" && url.pathname === "/.well-known/contextboundary-gateway-key") {
+      const gatewayKey = gatewayKeyMaterial(env);
+      return gatewayKey
+        ? jsonResponse({ key_id: gatewayKey.key_id, public_jwk: gatewayKey.public_jwk })
+        : jsonResponse({ error: "Gateway signing key is not configured" }, { status: 503 });
     }
 
     if (request.method === "GET" && url.pathname === "/mcp") {
@@ -82,7 +93,7 @@ async function handleBoundaryRequest(message, headers, env) {
 
   const identityId = headers.get("boundary-agent-id") ?? "";
   const action = message.params?.action ?? {};
-  const { result, audit, auditChain, receipt } = await evaluateAndAudit(identityId, action, env, headers.get("mcp-session-id") ?? undefined);
+  const { result, audit, auditChain, receipt } = await evaluateAndAudit(identityId, action, env, headers.get("mcp-session-id") ?? undefined, headers);
   return jsonRpcResult(message.id, {
     ...result,
     audit,
@@ -99,11 +110,14 @@ async function handleSessionStart(message, headers, env) {
   if (!env?.INTENT_SESSIONS) return jsonRpcError(message.id ?? null, -32603, "intent session storage is unavailable");
 
   const envelope = message.params?.intent_envelope;
+  const agentAuth = await authenticateAgentAction(identity, { type: "session.start" }, headers, env, sessionId);
   const ownerProof = headers.get("boundary-owner-proof");
   const expectedOwnerProof = env?.INTENT_ENVELOPE_BOOTSTRAP_KEY && envelope
     ? await hmacSha256Hex(env.INTENT_ENVELOPE_BOOTSTRAP_KEY, await hashIntentEnvelope(envelope))
     : null;
-  const started = !expectedOwnerProof
+  const started = !agentAuth.ok
+    ? { ok: false, reason: agentAuth.reason }
+    : !expectedOwnerProof
     ? { ok: false, reason: "owner_proof_unavailable" }
     : !timingSafeEqual(ownerProof, expectedOwnerProof)
       ? { ok: false, reason: "owner_proof_invalid" }
@@ -121,9 +135,9 @@ async function handleSessionStart(message, headers, env) {
         in_envelope: true,
         envelope_failing_dimension: null
       }
-    : closedEnvelopeResult(identity, started.reason);
+    : authOrEnvelopeFailure(identity, started.reason);
   const policyHash = await policyArtifactHash(policyData);
-  const receipt = await createReceipt(identity, { type: "session.start" }, result, policyHash, env, sessionId, started.ok ? started : null);
+  const receipt = await createReceipt(identity, { type: "session.start" }, result, policyHash, env, sessionId, started.ok ? started : null, agentAuth);
   const audit = receipt.events[1];
   emitAudit(env, audit);
   return jsonRpcResult(message.id ?? null, {
@@ -150,7 +164,7 @@ async function handleToolCall(message, headers, env) {
     capability,
     payload: message.params?.arguments ?? {}
   };
-  const { result, audit } = await evaluateAndAudit(identityId, action, env, headers.get("mcp-session-id") ?? undefined);
+  const { result, audit } = await evaluateAndAudit(identityId, action, env, headers.get("mcp-session-id") ?? undefined, headers);
   if (result.decision !== "allow") {
     return jsonRpcResult(message.id ?? null, { ...result, audit });
   }
@@ -166,11 +180,11 @@ async function handleToolList(message, headers, request, env) {
   const identityId = headers.get("boundary-agent-id") ?? "";
   const identity = identityRecord(identityId);
   if (!identity) {
-    const { result, audit } = await evaluateAndAudit(identityId, { type: "discover" }, env, headers.get("mcp-session-id") ?? undefined);
+    const { result, audit } = await evaluateAndAudit(identityId, { type: "discover" }, env, headers.get("mcp-session-id") ?? undefined, headers);
     return jsonRpcResult(message.id ?? null, { ...result, audit, tools: [] });
   }
 
-  const discoveryAudit = await evaluateAndAudit(identityId, { type: "discover" }, env, headers.get("mcp-session-id") ?? undefined);
+  const discoveryAudit = await evaluateAndAudit(identityId, { type: "discover" }, env, headers.get("mcp-session-id") ?? undefined, headers);
   const discovery = discoveryAudit.result;
   if (discovery.decision !== "allow") {
     return jsonRpcResult(message.id ?? null, { ...discovery, audit: discoveryAudit.audit, tools: [] });
@@ -202,12 +216,15 @@ async function handleToolList(message, headers, request, env) {
   });
 }
 
-async function evaluateAndAudit(identityId, action, env, sessionId) {
+async function evaluateAndAudit(identityId, action, env, sessionId, headers) {
   const identity = identityRecord(identityId);
-  const sessionContext = sessionId ? await readIntentSession(env, sessionId) : null;
+  const agentAuth = await authenticateAgentAction(identity, action, headers, env, sessionId);
+  const sessionContext = agentAuth.ok && sessionId ? await readIntentSession(env, sessionId) : null;
   let result;
   let envelopeContext = null;
-  if (sessionId && !sessionContext?.ok) {
+  if (!agentAuth.ok) {
+    result = authOrEnvelopeFailure(identity, agentAuth.reason);
+  } else if (sessionId && !sessionContext?.ok) {
     result = closedEnvelopeResult(identity, sessionContext?.reason ?? "no_envelope");
   } else {
     const baseResult = await evaluateBoundary(identityId, action, sessionContext ?? {});
@@ -234,16 +251,16 @@ async function evaluateAndAudit(identityId, action, env, sessionId) {
   }
   const policyHash = await policyArtifactHash(policyData);
   const auditChain = result.audit_steps
-    ? await Promise.all(result.audit_steps.map(async (step) => (await createReceipt(identity, step.action, step.result, policyHash, env, sessionId, envelopeContext)).events[1]))
+    ? await Promise.all(result.audit_steps.map(async (step) => (await createReceipt(identity, step.action, step.result, policyHash, env, sessionId, envelopeContext, agentAuth)).events[1]))
     : null;
-  const receipt = await createReceipt(identity, action, result, policyHash, env, sessionId, envelopeContext);
+  const receipt = await createReceipt(identity, action, result, policyHash, env, sessionId, envelopeContext, agentAuth);
   const audit = auditChain?.at(-1) ?? receipt.events[1];
 
   for (const record of auditChain ?? [audit]) emitAudit(env, record);
   return { result, audit, auditChain, receipt, envelopeContext };
 }
 
-async function createReceipt(identity, action, result, policyHash, env, sessionId, envelopeContext = null) {
+async function createReceipt(identity, action, result, policyHash, env, sessionId, envelopeContext = null, agentAuth = null) {
   const days = Math.max(1, Number(env?.AUDIT_RETENTION_DAYS ?? 30));
   return createSealedReceipt({
     sessionId,
@@ -255,8 +272,9 @@ async function createReceipt(identity, action, result, policyHash, env, sessionI
       policy: env?.AUDIT_RETENTION_POLICY ?? "retention-30d",
       expires_at: new Date(Date.now() + days * 86_400_000).toISOString()
     },
-    sealKey: env?.AUDIT_SEAL_KEY,
-    envelopeContext
+    gatewayKey: gatewayKeyMaterial(env),
+    envelopeContext,
+    agentAuth
   });
 }
 
@@ -282,6 +300,34 @@ function closedEnvelopeResult(identity, reason) {
     in_envelope: false,
     envelope_failing_dimension: reason
   };
+}
+
+function authOrEnvelopeFailure(identity, reason) {
+  if (reason === "identity_unverified" || reason === "replay_detected") {
+    return {
+      decision: "deny", rule_id: "E1", reason, obligations: [], obligation: null,
+      effective_tier: identity?.autonomy_tier ?? null, egress_tier_seen: null, detector_id: null,
+      in_envelope: false, envelope_failing_dimension: null
+    };
+  }
+  return closedEnvelopeResult(identity, reason);
+}
+
+async function authenticateAgentAction(identity, action, headers, env, sessionId) {
+  const agentAuth = await verifyAgentSignature({
+    identity,
+    action,
+    sessionId,
+    keyId: headers.get("boundary-agent-key-id"),
+    signature: headers.get("boundary-agent-signature"),
+    nonce: headers.get("boundary-agent-nonce"),
+    timestamp: headers.get("boundary-agent-timestamp"),
+    seq: Number(headers.get("boundary-agent-seq")),
+    env
+  });
+  if (!agentAuth.ok) return agentAuth;
+  const nonce = await intentSession(env, sessionId).consumeNonce({ nonce: agentAuth.nonce, timestamp: agentAuth.timestamp });
+  return nonce.ok ? agentAuth : { ok: false, reason: nonce.reason };
 }
 
 function timingSafeEqual(left, right) {
@@ -315,6 +361,7 @@ async function proxyMcpRequest(request, env) {
   const headers = new Headers(request.headers);
   headers.delete("host");
   headers.delete("content-length");
+  for (const header of ["boundary-agent-id", "boundary-agent-key-id", "boundary-agent-signature", "boundary-agent-nonce", "boundary-agent-timestamp", "boundary-agent-seq", "boundary-owner-proof"]) headers.delete(header);
 
   const upstreamRequest = new Request(upstream, {
     method: request.method,
@@ -363,7 +410,7 @@ function withCors(response) {
   const headers = new Headers(response.headers);
   headers.set("access-control-allow-origin", "*");
   headers.set("access-control-allow-methods", "GET,POST,OPTIONS");
-  headers.set("access-control-allow-headers", "authorization, boundary-agent-id, boundary-owner-proof, content-type, mcp-method, mcp-name, mcp-protocol-version, mcp-session-id");
+  headers.set("access-control-allow-headers", "authorization, boundary-agent-id, boundary-agent-key-id, boundary-agent-signature, boundary-agent-nonce, boundary-agent-timestamp, boundary-agent-seq, boundary-owner-proof, content-type, mcp-method, mcp-name, mcp-protocol-version, mcp-session-id");
   headers.set("access-control-expose-headers", "mcp-protocol-version");
   return new Response(response.body, {
     status: response.status,

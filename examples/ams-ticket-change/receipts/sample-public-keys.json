@@ -1,0 +1,14 @@
+{
+  "_comment": "Public verification material for sample-receipt.json. No private key material is included.",
+  "agent_keys": {
+    "agent:run-l1": [
+      {
+        "key_id": "example-agent-ed25519-v1",
+        "public_jwk": { "kty": "OKP", "crv": "Ed25519", "x": "oIFf0sQ5RS9SMtW8j0lwskrBUjbtsmHAjxPhlwor2Jg" }
+      }
+    ]
+  },
+  "gateway_keys": {
+    "example-gateway-ed25519-v1": { "kty": "OKP", "crv": "Ed25519", "x": "1QR9Y6K3cyb_TW-E7zCs62_kpp7hgY8Z8pyVLtfUJCQ" }
+  }
+}

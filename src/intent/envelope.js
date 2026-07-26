@@ -76,10 +76,11 @@ export function driftReviewThreshold(envelope) {
 }
 
 function envelopeViolation({ envelope, priorActionTrace, action, baseResult, capability }) {
+  if (!["invoke", "egress", "discover"].includes(action?.type)) return null;
   const authorized = envelope.authorized;
   if (action?.type !== "discover" && !authorized.capabilities.includes(action?.capability)) return "capability";
   if (action?.type !== "discover" && !authorized.sources.includes(capability?.source)) return "source";
-  if (action?.type === "egress" && !authorized.endpoints.includes(action?.endpoint)) return "endpoint";
+  if (action?.type === "egress" && action?.endpoint && !authorized.endpoints.includes(action.endpoint)) return "endpoint";
   if (action?.type === "egress" && protectionFor(baseResult.egress_tier_seen) < protectionFor(authorized.egress_tier_ceiling)) return "egress";
   if (tierFor(baseResult.effective_tier) > tierFor(authorized.autonomy_tier_ceiling)) return "autonomy";
   if (priorActionTrace.length >= envelope.limits.max_actions) return "budget";

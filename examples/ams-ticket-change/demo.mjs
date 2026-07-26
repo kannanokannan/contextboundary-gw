@@ -5,7 +5,9 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createHash, createHmac, randomUUID } from "node:crypto";
+import { createHash, createHmac, randomUUID, webcrypto } from "node:crypto";
+import { signingPayload, toBase64Url } from "../../src/identity/signatures.js";
+import { verifyReceipt } from "../../src/audit/receipts.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
@@ -14,6 +16,7 @@ const simulateStale = args.includes("--stale");
 const saveReceipts = args.includes("--save-receipts");
 const ownerBootstrapKey = process.env.BOUNDARY_OWNER_BOOTSTRAP_KEY;
 let rpcId = 0;
+let agentSigner;
 
 function argValue(flag) {
   const index = args.indexOf(flag);
@@ -34,6 +37,8 @@ async function contextOpsGate(manifest) {
 }
 
 async function boundaryRequest(agentId, method, params, sessionId, extraHeaders = {}) {
+  const action = method === "boundary/session.start" ? { type: "session.start" } : params.action;
+  const signatureHeaders = await agentSigner.sign(sessionId, action);
   const response = await fetch(target, {
     method: "POST",
     headers: {
@@ -41,6 +46,7 @@ async function boundaryRequest(agentId, method, params, sessionId, extraHeaders 
       "mcp-method": method,
       "boundary-agent-id": agentId,
       "mcp-session-id": sessionId,
+      ...signatureHeaders,
       ...extraHeaders
     },
     body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method, params })
@@ -49,6 +55,46 @@ async function boundaryRequest(agentId, method, params, sessionId, extraHeaders 
   const body = await response.json();
   if (!body.result) throw new Error(`no result in response: ${JSON.stringify(body)}`);
   return body.result;
+}
+
+async function createEphemeralAgentSigner(agentId) {
+  const keyPair = await webcrypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+  const privateJwk = await webcrypto.subtle.exportKey("jwk", keyPair.privateKey);
+  const publicJwk = await webcrypto.subtle.exportKey("jwk", keyPair.publicKey);
+  const keyId = `demo:${agentId}:ed25519-ephemeral`;
+  let sequence = 0;
+  return {
+    keyId,
+    publicRecord: { key_id: keyId, public_jwk: { kty: "OKP", crv: "Ed25519", x: publicJwk.x } },
+    async sign(sessionId, action) {
+      const nonce = randomUUID();
+      const timestamp = new Date().toISOString();
+      const payload = await signingPayload({ sessionId, seq: sequence, action, nonce, timestamp });
+      const key = await webcrypto.subtle.importKey("jwk", privateJwk, { name: "Ed25519" }, false, ["sign"]);
+      const signature = await webcrypto.subtle.sign("Ed25519", key, new TextEncoder().encode(payload));
+      const headers = {
+        "boundary-agent-key-id": keyId,
+        "boundary-agent-signature": toBase64Url(new Uint8Array(signature)),
+        "boundary-agent-nonce": nonce,
+        "boundary-agent-timestamp": timestamp,
+        "boundary-agent-seq": String(sequence)
+      };
+      sequence += 1;
+      return headers;
+    }
+  };
+}
+
+async function thirdPartyVerify(receipt, agentId) {
+  const response = await fetch(new URL("/.well-known/contextboundary-gateway-key", target));
+  if (!response.ok) throw new Error("gateway did not publish its Ed25519 public key");
+  const gateway = await response.json();
+  const result = await verifyReceipt(receipt, {
+    agent_keys: { [agentId]: [agentSigner.publicRecord] },
+    gateway_keys: { [gateway.key_id]: gateway.public_jwk }
+  });
+  if (!result.valid) throw new Error(`third-party receipt verification failed: ${result.code}`);
+  return result;
 }
 
 async function boundarySessionStart(agentId, intentEnvelope, sessionId) {
@@ -103,8 +149,11 @@ function printDecision(label, result) {
 async function main() {
   const manifest = JSON.parse(await readFile(join(here, "context-manifest.json"), "utf8"));
   const agent = manifest.agent_binding.agent_id;
+  agentSigner = await createEphemeralAgentSigner(agent);
   console.log(`Governed AMS Ticket Change Agent - ${manifest.ticket.id}: ${manifest.ticket.summary}`);
   console.log(`Gateway: ${target}`);
+  console.log(`Ephemeral agent key: ${agentSigner.keyId}`);
+  console.log(`Register this public key in the gateway's trusted AGENT_KEY_REGISTRY before running: ${JSON.stringify(agentSigner.publicRecord)}`);
 
   const failures = await contextOpsGate(manifest);
   if (failures.length) {
@@ -140,6 +189,11 @@ async function main() {
   }, sessionId);
   printDecision("Flow C - credential-bearing egress", flowC);
   receipts.push({ flow: "C-deny", ...flowC.audit });
+
+  for (const receipt of receipts) {
+    const result = await thirdPartyVerify(receipt, agent);
+    console.log(`[VERIFY]  ${receipt.flow} - third-party Ed25519 verification (${result.event_count} events)`);
+  }
 
   if (saveReceipts) {
     const dir = join(here, "receipts");

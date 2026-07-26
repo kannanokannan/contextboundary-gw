@@ -40,6 +40,9 @@
       "trusted_sources": [
         "mcp:self"
       ],
+      "agent_keys": [
+        { "key_id": "agent:run-l1-ed25519-v1", "public_jwk": { "kty": "OKP", "crv": "Ed25519", "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURA" } }
+      ],
       "tier_ordinal": 1
     },
     "agent:run-l3": {
@@ -48,6 +51,9 @@
       "autonomy_tier": "T3",
       "trusted_sources": [
         "mcp:self"
+      ],
+      "agent_keys": [
+        { "key_id": "agent:run-l3-ed25519-v1", "public_jwk": { "kty": "OKP", "crv": "Ed25519", "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURA" } }
       ],
       "tier_ordinal": 3
     },
@@ -58,6 +64,9 @@
       "trusted_sources": [
         "mcp:self",
         "mcp:vendor"
+      ],
+      "agent_keys": [
+        { "key_id": "agent:run-l3v-ed25519-v1", "public_jwk": { "kty": "OKP", "crv": "Ed25519", "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURA" } }
       ],
       "tier_ordinal": 3
     }

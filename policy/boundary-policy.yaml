@@ -23,14 +23,23 @@ identities:
     accountable_owner: role:run-lead-apac
     autonomy_tier: T1
     trusted_sources: [mcp:self]
+    agent_keys:
+      - key_id: agent:run-l1-ed25519-v1
+        public_jwk: { kty: OKP, crv: Ed25519, x: 11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURA }
   - id: agent:run-l3
     accountable_owner: role:run-lead-apac
     autonomy_tier: T3
     trusted_sources: [mcp:self]
+    agent_keys:
+      - key_id: agent:run-l3-ed25519-v1
+        public_jwk: { kty: OKP, crv: Ed25519, x: 11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURA }
   - id: agent:run-l3v
     accountable_owner: role:run-lead-apac
     autonomy_tier: T3
     trusted_sources: [mcp:self, mcp:vendor]
+    agent_keys:
+      - key_id: agent:run-l3v-ed25519-v1
+        public_jwk: { kty: OKP, crv: Ed25519, x: 11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURA }
 capabilities:
   - id: triage-alert
     source: mcp:self
