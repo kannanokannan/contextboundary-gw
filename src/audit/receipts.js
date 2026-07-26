@@ -4,7 +4,7 @@ import { signGatewaySeal, verifyGatewaySeal } from "../identity/gateway-key.js";
 
 const GENESIS_PREFIX = "cb-audit-genesis";
 
-export async function createSealedReceipt({ sessionId = crypto.randomUUID(), identity, action, result, policyHash, retention, gatewayKey, envelopeContext = null, agentAuth = null }) {
+export async function createSealedReceipt({ sessionId = crypto.randomUUID(), identity, action, result, policyHash, retention, gatewayKey, envelopeContext = null, agentAuth = null, r4Context = null }) {
   if (!gatewayKey) throw new Error("GATEWAY_ED25519_PRIVATE_JWK is required to issue an R6 receipt");
   const timestamp = new Date().toISOString();
   const sessionSpanId = crypto.randomUUID();
@@ -30,7 +30,12 @@ export async function createSealedReceipt({ sessionId = crypto.randomUUID(), ide
     egress_tier_seen: result.egress_tier_seen ?? null, detector_id: result.detector_id ?? null, obligation: result.obligation ?? null,
     replay_inputs: replayInputs(action, result), in_envelope: result.in_envelope === true, envelope_failing_dimension: result.envelope_failing_dimension ?? null,
     agent_sig: agentAuth?.agent_sig ?? null, agent_key_id: agentAuth?.agent_key_id ?? null, nonce: agentAuth?.nonce ?? null,
-    agent_timestamp: agentAuth?.timestamp ?? null, agent_seq: agentAuth?.seq ?? null
+    agent_timestamp: agentAuth?.timestamp ?? null, agent_seq: agentAuth?.seq ?? null,
+    ...(r4Context?.original_action_hash ? { original_action_hash: r4Context.original_action_hash } : {}),
+    ...(r4Context?.transform_id ? { transform_id: r4Context.transform_id } : {}),
+    ...(r4Context?.resulting_action_hash ? { resulting_action_hash: r4Context.resulting_action_hash } : {}),
+    ...(r4Context?.resume_token ? { resume_token: r4Context.resume_token } : {}),
+    ...(r4Context?.defer_reason ? { defer_reason: r4Context.defer_reason } : {})
   });
   const intermediate = [start, decision];
   if (result.envelope_amendment_required) {

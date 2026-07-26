@@ -27,6 +27,7 @@ const data = {
     min_protection: requiredOrdinal(egressProtection, detector.min_tier, `detector ${detector.id}`),
     pattern_set: detectorSets[detector.match] ?? fail(`Detector ${detector.id} references unknown pattern set ${detector.match}`)
   })),
+  remediation: policy.remediation ?? { transforms: [], rules: [], defer_rules: [] },
   identities: Object.fromEntries(policy.identities.map((identity) => [
     identity.id,
     {
@@ -88,6 +89,21 @@ function validatePolicy(value) {
       if (!key?.key_id || key?.public_jwk?.kty !== "OKP" || key?.public_jwk?.crv !== "Ed25519" || typeof key?.public_jwk?.x !== "string" || Object.hasOwn(key.public_jwk, "d")) {
         throw new Error(`Identity ${identity.id} has an invalid Ed25519 public key record`);
       }
+    }
+  }
+  const transforms = value.remediation?.transforms ?? [];
+  const transformIds = new Set(transforms.map((transform) => transform?.id));
+  if (transformIds.size !== transforms.length || transforms.some((transform) => !["strip_field", "clamp_tier", "redact_match"].includes(transform?.id) || !Array.isArray(transform?.path))) {
+    throw new Error("Remediation transforms must be a unique closed allowlist of named deterministic transforms");
+  }
+  for (const rule of value.remediation?.rules ?? []) {
+    if (!rule?.rule_id || !rule?.reason || !Array.isArray(rule.transforms) || rule.transforms.some((id) => !transformIds.has(id))) {
+      throw new Error("Remediation rules must name only declared transforms");
+    }
+  }
+  for (const rule of value.remediation?.defer_rules ?? []) {
+    if (!rule?.id || !rule?.action_type || !rule?.capability || !Array.isArray(rule?.when?.path) || !rule?.resume_condition || !Array.isArray(rule?.resume_path)) {
+      throw new Error("Deferred rules must be declared with a deterministic condition and resume path");
     }
   }
 }

@@ -18,6 +18,28 @@ egress_detectors:
     description: Credential-shaped content
     match: credential-patterns
     min_tier: I
+remediation:
+  transforms:
+    - id: strip_field
+      path: [payload, legacy_credential]
+    - id: redact_match
+      path: [payload, note]
+      pattern: '(password|credential|secret)\\s*[=:]\\s*[^\\s]+'
+    - id: clamp_tier
+      path: [payload_egress_tier]
+      ceiling: I
+  rules:
+    - rule_id: R4
+      reason: egress_violation
+      detector_id: det:credential-pattern
+      transforms: [strip_field, redact_match, clamp_tier]
+  defer_rules:
+    - id: wait-for-source-ready
+      action_type: invoke
+      capability: triage-alert
+      when: { path: [payload, source_ready], equals: false }
+      resume_condition: source-ready
+      resume_path: [payload, source_ready]
 identities:
   - id: agent:run-l1
     accountable_owner: role:run-lead-apac

@@ -6,9 +6,11 @@ import {
 } from "./policy/evaluator.js";
 import policyData from "./policy/generated/data.json";
 import { createSealedReceipt, policyArtifactHash } from "./audit/receipts.js";
-import { hashIntentEnvelope, hmacSha256Hex } from "./intent/canonical.js";
+import { canonicalize, hashIntentEnvelope, hmacSha256Hex, sha256Hex } from "./intent/canonical.js";
+import { evaluateIntentEnvelope } from "./intent/envelope.js";
 import { gatewayKeyMaterial } from "./identity/gateway-key.js";
 import { verifyAgentSignature } from "./identity/signatures.js";
+import { applyDeclaredTransform, declaredTransforms, deferredCondition, resumeAction } from "./r4/transforms.js";
 export { IntentSession } from "./intent/session.js";
 
 const DEFAULT_UPSTREAM_MCP_URL = "https://mcp.context-stack.org/mcp";
@@ -66,6 +68,12 @@ export default {
       if (method === "boundary/session.start") {
         return message
           ? handleSessionStart(message, request.headers, env)
+          : jsonRpcError(null, -32600, "Invalid JSON-RPC request");
+      }
+
+      if (method === "boundary/deferred.resume") {
+        return message
+          ? handleDeferredResume(message, request.headers, env)
           : jsonRpcError(null, -32600, "Invalid JSON-RPC request");
       }
 
@@ -152,6 +160,40 @@ async function handleSessionStart(message, headers, env) {
   });
 }
 
+async function handleDeferredResume(message, headers, env) {
+  const identityId = headers.get("boundary-agent-id") ?? "";
+  const identity = identityRecord(identityId);
+  const sessionId = headers.get("mcp-session-id") ?? undefined;
+  const resumeToken = message.params?.resume_token;
+  const condition = message.params?.condition;
+  if (!sessionId || typeof resumeToken !== "string") return jsonRpcError(message.id ?? null, -32602, "boundary/deferred.resume requires mcp-session-id and resume_token");
+  const signedAction = { type: "deferred.resume", resume_token: resumeToken, condition_id: condition?.id ?? null };
+  const agentAuth = await authenticateAgentAction(identity, signedAction, headers, env, sessionId);
+  let result;
+  let envelopeContext = null;
+  let r4Context = { resume_token: resumeToken };
+  if (!agentAuth.ok) {
+    result = authOrEnvelopeFailure(identity, agentAuth.reason);
+  } else {
+    const record = await intentSession(env, sessionId).deferred(resumeToken);
+    const action = resumeAction(record, condition);
+    if (!record || record.identity_id !== identityId || !action) {
+      result = { ...closedEnvelopeResult(identity, "deferred_record_unavailable"), rule_id: "R4", reason: "deferred_record_unavailable", resume_token: resumeToken };
+    } else {
+      const baseResult = await evaluateBoundary(identityId, action, await readIntentSession(env, sessionId));
+      const resumed = await intentSession(env, sessionId).resume({ resumeToken, identityId, action, baseResult, capability: capabilityRecord(action.capability) });
+      result = resumed.ok ? resumed.result : { ...closedEnvelopeResult(identity, resumed.reason), rule_id: "R4", reason: resumed.reason, resume_token: resumeToken };
+      if (resumed.ok) envelopeContext = resumed;
+      r4Context = { resume_token: resumeToken, resulting_action_hash: await sha256Hex(canonicalize(action)) };
+    }
+  }
+  const policyHash = await policyArtifactHash(policyData);
+  const receipt = await createReceipt(identity, signedAction, result, policyHash, env, sessionId, envelopeContext, agentAuth, r4Context);
+  const audit = receipt.events[1];
+  emitAudit(env, audit);
+  return jsonRpcResult(message.id ?? null, { ...result, audit, receipt });
+}
+
 async function handleToolCall(message, headers, env) {
   const identityId = headers.get("boundary-agent-id") ?? "";
   const capability = message.params?.name;
@@ -164,15 +206,16 @@ async function handleToolCall(message, headers, env) {
     capability,
     payload: message.params?.arguments ?? {}
   };
-  const { result, audit } = await evaluateAndAudit(identityId, action, env, headers.get("mcp-session-id") ?? undefined, headers);
+  const { result, audit, executionAction } = await evaluateAndAudit(identityId, action, env, headers.get("mcp-session-id") ?? undefined, headers);
   if (result.decision !== "allow") {
     return jsonRpcResult(message.id ?? null, { ...result, audit });
   }
 
+  const forwarded = executionAction ?? action;
   return proxyMcpRequest(new Request("https://gateway.invalid/mcp", {
     method: "POST",
     headers,
-    body: JSON.stringify(message)
+    body: JSON.stringify({ ...message, params: { ...message.params, name: forwarded.capability, arguments: forwarded.payload ?? {} } })
   }), env);
 }
 
@@ -222,6 +265,8 @@ async function evaluateAndAudit(identityId, action, env, sessionId, headers) {
   const sessionContext = agentAuth.ok && sessionId ? await readIntentSession(env, sessionId) : null;
   let result;
   let envelopeContext = null;
+  let executionAction = action;
+  let r4Context = null;
   if (!agentAuth.ok) {
     result = authOrEnvelopeFailure(identity, agentAuth.reason);
   } else if (sessionId && !sessionContext?.ok) {
@@ -229,21 +274,37 @@ async function evaluateAndAudit(identityId, action, env, sessionId, headers) {
   } else {
     const baseResult = await evaluateBoundary(identityId, action, sessionContext ?? {});
     if (sessionId) {
-      const decided = await intentSession(env, sessionId).decide({
-        action,
-        baseResult,
-        capability: capabilityRecord(action.capability)
-      });
-      if (!decided.ok) {
-        result = closedEnvelopeResult(identity, decided.reason);
-      } else {
-        result = decided.result;
+      const capability = capabilityRecord(action.capability);
+      const preview = evaluateIntentEnvelope({ envelope: sessionContext.envelope, priorActionTrace: sessionContext.prior_action_trace, action, baseResult, capability }).result;
+      let decided = null;
+      if (preview.decision === "deny") {
+        for (const transform of declaredTransforms(preview)) {
+          const transformed = await applyDeclaredTransform(action, transform);
+          if (!transformed) continue;
+          const transformedBase = await evaluateBoundary(identityId, transformed.action, sessionContext);
+          const candidate = await intentSession(env, sessionId).decide({ action: transformed.action, baseResult: transformedBase, capability: capabilityRecord(transformed.action.capability) });
+          if (candidate.ok && candidate.result.decision === "allow") {
+            decided = candidate;
+            executionAction = transformed.action;
+            r4Context = transformed;
+            result = { ...candidate.result, decision: "modify", rule_id: "R4", reason: "transform_applied", transform_id: transformed.transform_id, original_action_hash: transformed.original_action_hash, resulting_action_hash: transformed.resulting_action_hash };
+            break;
+          }
+        }
+      }
+      if (!decided && preview.decision === "allow" && deferredCondition(action)) {
+        decided = await intentSession(env, sessionId).defer({ action, baseResult, capability, identityId, deferRule: deferredCondition(action) });
+        if (decided.ok) {
+          result = decided.result;
+          r4Context = { resume_token: result.resume_token, defer_reason: result.defer_reason };
+        }
+      }
+      if (!decided) decided = await intentSession(env, sessionId).decide({ action, baseResult, capability });
+      if (!decided.ok) result = closedEnvelopeResult(identity, decided.reason);
+      else if (!result) result = decided.result;
+      if (decided.ok) {
         envelopeContext = decided;
-        result = {
-          ...result,
-          session_trace: decided.prior_action_trace,
-          envelope_drift_review: decided.envelope_drift_review
-        };
+        result = { ...result, session_trace: decided.prior_action_trace, envelope_drift_review: decided.envelope_drift_review };
       }
     } else {
       result = baseResult;
@@ -253,14 +314,14 @@ async function evaluateAndAudit(identityId, action, env, sessionId, headers) {
   const auditChain = result.audit_steps
     ? await Promise.all(result.audit_steps.map(async (step) => (await createReceipt(identity, step.action, step.result, policyHash, env, sessionId, envelopeContext, agentAuth)).events[1]))
     : null;
-  const receipt = await createReceipt(identity, action, result, policyHash, env, sessionId, envelopeContext, agentAuth);
+  const receipt = await createReceipt(identity, action, result, policyHash, env, sessionId, envelopeContext, agentAuth, r4Context);
   const audit = auditChain?.at(-1) ?? receipt.events[1];
 
   for (const record of auditChain ?? [audit]) emitAudit(env, record);
-  return { result, audit, auditChain, receipt, envelopeContext };
+  return { result, audit, auditChain, receipt, envelopeContext, executionAction };
 }
 
-async function createReceipt(identity, action, result, policyHash, env, sessionId, envelopeContext = null, agentAuth = null) {
+async function createReceipt(identity, action, result, policyHash, env, sessionId, envelopeContext = null, agentAuth = null, r4Context = null) {
   const days = Math.max(1, Number(env?.AUDIT_RETENTION_DAYS ?? 30));
   return createSealedReceipt({
     sessionId,
@@ -274,7 +335,8 @@ async function createReceipt(identity, action, result, policyHash, env, sessionI
     },
     gatewayKey: gatewayKeyMaterial(env),
     envelopeContext,
-    agentAuth
+    agentAuth,
+    r4Context
   });
 }
 
