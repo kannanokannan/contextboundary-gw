@@ -10,7 +10,7 @@
   "context": {
     "context_owner": "role:run-lead-apac",
     "context_domain": "ams-run-mail",
-    "last_validated": "2026-07-22T09:00:00Z",
+    "last_validated": "2026-07-31T09:00:00Z",
     "max_age_hours": 72,
     "sources": [
       { "id": "cmdb:prod-mail-gateway", "trust": "trusted" },
