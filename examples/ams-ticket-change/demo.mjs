@@ -11,12 +11,16 @@ import { verifyReceipt } from "../../src/audit/receipts.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const args = process.argv.slice(2);
-const target = argValue("--target") ?? "https://contextboundary-gw-staging.kannanokannan.workers.dev/mcp";
+const target = argValue("--target") ?? "http://127.0.0.1:8787/mcp";
 const simulateStale = args.includes("--stale");
 const saveReceipts = args.includes("--save-receipts");
 const ownerBootstrapKey = process.env.BOUNDARY_OWNER_BOOTSTRAP_KEY;
+const configuredAgentPrivateJwk = parseJsonEnv("DEMO_AGENT_PRIVATE_JWK");
+const configuredAgentKeyId = process.env.DEMO_AGENT_KEY_ID;
+const receiptsDir = process.env.DEMO_RECEIPTS_DIR ?? join(here, "receipts");
 let rpcId = 0;
 let agentSigner;
+let gatewayPublicKey;
 
 function argValue(flag) {
   const index = args.indexOf(flag);
@@ -58,10 +62,16 @@ async function boundaryRequest(agentId, method, params, sessionId, extraHeaders 
 }
 
 async function createEphemeralAgentSigner(agentId) {
-  const keyPair = await webcrypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
-  const privateJwk = await webcrypto.subtle.exportKey("jwk", keyPair.privateKey);
-  const publicJwk = await webcrypto.subtle.exportKey("jwk", keyPair.publicKey);
-  const keyId = `demo:${agentId}:ed25519-ephemeral`;
+  const keyPair = configuredAgentPrivateJwk
+    ? null
+    : await webcrypto.subtle.generateKey({ name: "Ed25519" }, true, ["sign", "verify"]);
+  const privateJwk = configuredAgentPrivateJwk ?? await webcrypto.subtle.exportKey("jwk", keyPair.privateKey);
+  const publicJwk = configuredAgentPrivateJwk ?? await webcrypto.subtle.exportKey("jwk", keyPair.publicKey);
+  if (privateJwk?.kty !== "OKP" || privateJwk?.crv !== "Ed25519" || typeof privateJwk.x !== "string" || typeof privateJwk.d !== "string") {
+    throw new Error("DEMO_AGENT_PRIVATE_JWK must be an Ed25519 private JWK when set");
+  }
+  const keyId = configuredAgentKeyId ?? `demo:${agentId}:ed25519-ephemeral`;
+  const privateKey = await webcrypto.subtle.importKey("jwk", privateJwk, { name: "Ed25519" }, false, ["sign"]);
   let sequence = 0;
   return {
     keyId,
@@ -70,8 +80,7 @@ async function createEphemeralAgentSigner(agentId) {
       const nonce = randomUUID();
       const timestamp = new Date().toISOString();
       const payload = await signingPayload({ sessionId, seq: sequence, action, nonce, timestamp });
-      const key = await webcrypto.subtle.importKey("jwk", privateJwk, { name: "Ed25519" }, false, ["sign"]);
-      const signature = await webcrypto.subtle.sign("Ed25519", key, new TextEncoder().encode(payload));
+      const signature = await webcrypto.subtle.sign("Ed25519", privateKey, new TextEncoder().encode(payload));
       const headers = {
         "boundary-agent-key-id": keyId,
         "boundary-agent-signature": toBase64Url(new Uint8Array(signature)),
@@ -86,15 +95,30 @@ async function createEphemeralAgentSigner(agentId) {
 }
 
 async function thirdPartyVerify(receipt, agentId) {
-  const response = await fetch(new URL("/.well-known/contextboundary-gateway-key", target));
-  if (!response.ok) throw new Error("gateway did not publish its Ed25519 public key");
-  const gateway = await response.json();
+  const gateway = await publishedGatewayKey();
   const result = await verifyReceipt(receipt, {
     agent_keys: { [agentId]: [agentSigner.publicRecord] },
     gateway_keys: { [gateway.key_id]: gateway.public_jwk }
   });
   if (!result.valid) throw new Error(`third-party receipt verification failed: ${result.code}`);
   return result;
+}
+
+async function publishedGatewayKey() {
+  if (gatewayPublicKey) return gatewayPublicKey;
+  const response = await fetch(new URL("/.well-known/contextboundary-gateway-key", target));
+  if (!response.ok) throw new Error("gateway did not publish its Ed25519 public key");
+  gatewayPublicKey = await response.json();
+  return gatewayPublicKey;
+}
+
+function parseJsonEnv(name) {
+  if (!process.env[name]) return null;
+  try {
+    return JSON.parse(process.env[name]);
+  } catch {
+    throw new Error(`${name} must contain JSON`);
+  }
 }
 
 async function boundarySessionStart(agentId, intentEnvelope, sessionId) {
@@ -153,7 +177,9 @@ async function main() {
   console.log(`Governed AMS Ticket Change Agent - ${manifest.ticket.id}: ${manifest.ticket.summary}`);
   console.log(`Gateway: ${target}`);
   console.log(`Ephemeral agent key: ${agentSigner.keyId}`);
-  console.log(`Register this public key in the gateway's trusted AGENT_KEY_REGISTRY before running: ${JSON.stringify(agentSigner.publicRecord)}`);
+  console.log(configuredAgentPrivateJwk
+    ? "The local launcher registered this runtime-only public key with the local gateway."
+    : `Register this public key in the gateway's trusted AGENT_KEY_REGISTRY before running: ${JSON.stringify(agentSigner.publicRecord)}`);
 
   const failures = await contextOpsGate(manifest);
   if (failures.length) {
@@ -167,19 +193,19 @@ async function main() {
   const receipts = [];
   const session = await boundarySessionStart(agent, intentEnvelope, sessionId);
   printDecision("Session start - accountable-owner declared intent envelope", session);
-  receipts.push({ flow: "session-start", ...session.audit });
+  receipts.push({ flow: "session-start", receipt: session.receipt });
 
   const flowA = await boundaryRequest(agent, "boundary/evaluate", {
     action: { type: "invoke", capability: "triage-alert", payload: { ticket: manifest.ticket.id } }
   }, sessionId);
   printDecision(`Flow A - triage ${manifest.ticket.id}`, flowA);
-  receipts.push({ flow: "A-allow", ...flowA.audit });
+  receipts.push({ flow: "A-allow", receipt: flowA.receipt });
 
   const flowB = await boundaryRequest(agent, "boundary/evaluate", {
     action: { type: "invoke", capability: "apply-change", payload: { ticket: manifest.ticket.id, change: "rotate smtp relay config" } }
   }, sessionId);
   printDecision("Flow B - apply high-risk change", flowB);
-  receipts.push({ flow: "B-approve", ...flowB.audit });
+  receipts.push({ flow: "B-approve", receipt: flowB.receipt });
 
   const flowC = await boundaryRequest(agent, "boundary/evaluate", {
     action: {
@@ -188,19 +214,29 @@ async function main() {
     }
   }, sessionId);
   printDecision("Flow C - credential-bearing egress", flowC);
-  receipts.push({ flow: "C-deny", ...flowC.audit });
+  receipts.push({ flow: "C-deny", receipt: flowC.receipt });
 
-  for (const receipt of receipts) {
+  for (const { flow, receipt } of receipts) {
     const result = await thirdPartyVerify(receipt, agent);
-    console.log(`[VERIFY]  ${receipt.flow} - third-party Ed25519 verification (${result.event_count} events)`);
+    console.log(`[VERIFY]  ${flow} - third-party Ed25519 verification (${result.event_count} events)`);
   }
 
   if (saveReceipts) {
-    const dir = join(here, "receipts");
-    await mkdir(dir, { recursive: true });
-    const file = join(dir, `run-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
-    await writeFile(file, JSON.stringify(receipts, null, 2));
-    console.log(`\nReceipts written: ${file}`);
+    await mkdir(receiptsDir, { recursive: true });
+    const runId = new Date().toISOString().replace(/[:.]/g, "-");
+    const gateway = await publishedGatewayKey();
+    const keysFile = join(receiptsDir, `run-${runId}-public-keys.json`);
+    await writeFile(keysFile, JSON.stringify({
+      agent_keys: { [agent]: [agentSigner.publicRecord] },
+      gateway_keys: { [gateway.key_id]: gateway.public_jwk }
+    }, null, 2));
+    console.log(`\nReceipt verification keys: ${keysFile}`);
+    for (const { flow, receipt } of receipts) {
+      const file = join(receiptsDir, `run-${runId}-${flow}.json`);
+      await writeFile(file, JSON.stringify(receipt, null, 2));
+      console.log(`Receipt (${flow}): ${file}`);
+      console.log(`Verify: node audit/verify-receipt.mjs "${file}" --public-keys "${keysFile}"`);
+    }
   }
 }
 

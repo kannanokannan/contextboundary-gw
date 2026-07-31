@@ -22,19 +22,30 @@ A runnable demonstration of an AMS agent's actions on ticket **INC-42137** ("rot
 
 ## Run it
 
+From a clean clone, install the local runtime and run the example:
+
+```bash
+npm ci
+node examples/ams-ticket-change/run-local.mjs
+```
+
+`run-local.mjs` starts `npx wrangler dev --local --port 8787`, then runs `demo.mjs` with no `--target` argument. It generates an agent keypair, a gateway signing keypair, and the owner-bootstrap value only in memory for this local run. They are obvious local test values, never production secrets, and are not written or committed. The three demonstrated `boundary/evaluate` paths are handled by the gateway itself, so this run needs no upstream MCP server.
+
+The output shows the three outcomes and `[VERIFY]` lines for the session and each flow. With `--save-receipts`, the launcher writes complete receipt documents plus a public-key bundle to a temporary directory and prints the exact `node audit/verify-receipt.mjs ... --public-keys ...` commands for independent verification.
+
 The agent signer and the gateway have distinct key responsibilities:
 
 - The agent runtime holds its private Ed25519 key and signs every request.
 - The gateway is configured with that agent's public key in its trusted `AGENT_KEY_REGISTRY`.
 - The gateway's `GATEWAY_ED25519_PRIVATE_JWK` remains a Worker secret. Its derived public key is published at `/.well-known/contextboundary-gateway-key`.
 
-For a local test/demo environment, generate the agent and gateway test keys in memory and inject only the corresponding public agent record into the gateway configuration. The demo does this signing at runtime and prints its ephemeral public record; it never writes or commits a private key.
+To point the demo at an operator-configured gateway, provide a matching registered agent key, `BOUNDARY_OWNER_BOOTSTRAP_KEY`, and the gateway target:
 
 ```bash
-BOUNDARY_OWNER_BOOTSTRAP_KEY=<owner-bootstrap-secret> node examples/ams-ticket-change/demo.mjs --target https://<your-gateway>/mcp --save-receipts
+BOUNDARY_OWNER_BOOTSTRAP_KEY=<operator-supplied-value> node examples/ams-ticket-change/demo.mjs --target https://<your-gateway>/mcp --save-receipts
 ```
 
-The configured public agent key must match the ephemeral key shown at start-up. Production setup is intentionally pending the Worker-secret and trusted-registry configuration.
+The configured public agent key must match the demo agent key. Production setup remains intentionally pending the Worker-secret and trusted-registry configuration.
 
 Flags: `--stale` simulates expired context (the ContextOps gate blocks and the boundary is never consulted); `--save-receipts` writes the receipt chains to `receipts/`.
 
