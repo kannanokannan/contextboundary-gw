@@ -27,6 +27,7 @@ npm run test:intent-envelope
 npm run test:r4
 npm run test:r6
 npm run test:r8
+npm run test:server-discover
 ```
 
 ```powershell
@@ -44,9 +45,10 @@ npm run test:intent-envelope
 npm run test:r4
 npm run test:r6
 npm run test:r8
+npm run test:server-discover
 ```
 
-`TEST_AUDIT_SEAL_KEY` and `TEST_INTENT_ENVELOPE_BOOTSTRAP_KEY` are arbitrary, non-empty values used only by local tests; they are not production secrets. `test:conformance` and `test:intent-envelope` require both values. `test:interception` requires `TEST_AUDIT_SEAL_KEY`. The other four suites create their own ephemeral test material.
+`TEST_AUDIT_SEAL_KEY` and `TEST_INTENT_ENVELOPE_BOOTSTRAP_KEY` are arbitrary, non-empty values used only by local tests; they are not production secrets. `test:conformance` and `test:intent-envelope` require both values. `test:interception` requires `TEST_AUDIT_SEAL_KEY`. The other four existing suites create their own ephemeral test material; `test:server-discover` needs no test values.
 
 | Suite | Coverage | Local execution |
 | --- | --- | --- |
@@ -57,6 +59,7 @@ npm run test:r8
 | `test:r4` | 14 assertions for MODIFY and DEFER outcomes | Local Worker and local spy upstream |
 | `test:r6` | 17 assertions for agent signatures, rotation, replay, and public-key verification | Local Worker |
 | `test:r8` | 10 assertions for OpenTelemetry export | Node-only with a local collector |
+| `test:server-discover` | 15 assertions for locally-answered, policy-filtered discovery | Local Worker and local spy upstream |
 
 ## Mediation boundary
 

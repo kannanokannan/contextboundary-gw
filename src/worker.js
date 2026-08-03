@@ -15,6 +15,8 @@ import { exportOtlpReceipt } from "./r8/otel.js";
 export { IntentSession } from "./intent/session.js";
 
 const DEFAULT_UPSTREAM_MCP_URL = "https://mcp.context-stack.org/mcp";
+const SUPPORTED_MCP_VERSIONS = ["2026-07-28"];
+const GATEWAY_SERVER_INFO = { name: "contextboundary-gw", version: "1.1.0" };
 
 export default {
   async fetch(request, env, ctx) {
@@ -87,6 +89,12 @@ export default {
       if (method === "tools/list") {
         return message
           ? handleToolList(message, request.headers, request, env, ctx)
+          : jsonRpcError(null, -32600, "Invalid JSON-RPC request");
+      }
+
+      if (method === "server/discover") {
+        return message
+          ? handleServerDiscover(message, request.headers, env)
           : jsonRpcError(null, -32600, "Invalid JSON-RPC request");
       }
     }
@@ -257,6 +265,50 @@ async function handleToolList(message, headers, request, env, ctx) {
         return envelopeCapabilities.includes(tool?.name) && envelopeSources?.includes(capability?.source);
       })
     }
+  });
+}
+
+async function handleServerDiscover(message, headers, env) {
+  let capabilityIds = [];
+  try {
+    capabilityIds = await authorizedDiscoveryCapabilities(headers, env);
+  } catch {
+    capabilityIds = [];
+  }
+
+  return jsonRpcResult(message.id ?? null, {
+    resultType: "complete",
+    supportedVersions: SUPPORTED_MCP_VERSIONS,
+    capabilities: {
+      tools: Object.fromEntries(capabilityIds.map((capability) => [capability, {}]))
+    },
+    _meta: {
+      "io.modelcontextprotocol/serverInfo": GATEWAY_SERVER_INFO
+    },
+    instructions: "Capabilities are filtered by the caller's registered identity and frozen intent envelope."
+  });
+}
+
+async function authorizedDiscoveryCapabilities(headers, env) {
+  const identityId = headers.get("boundary-agent-id") ?? "";
+  const identity = identityRecord(identityId);
+  const sessionId = headers.get("mcp-session-id") ?? undefined;
+  if (!identity || !sessionId || !env?.INTENT_SESSIONS || !env?.AGENT_KEY_REGISTRY) return [];
+
+  const agentAuth = await authenticateAgentAction(identity, { type: "discover" }, headers, env, sessionId);
+  if (!agentAuth.ok) return [];
+
+  const sessionContext = await readIntentSession(env, sessionId);
+  if (!sessionContext.ok) return [];
+
+  const discovery = await evaluateBoundary(identityId, { type: "discover" }, sessionContext);
+  if (discovery.decision !== "allow") return [];
+
+  const envelopeCapabilities = new Set(sessionContext.envelope?.authorized?.capabilities ?? []);
+  const envelopeSources = new Set(sessionContext.envelope?.authorized?.sources ?? []);
+  return (discovery.capabilities ?? []).filter((capabilityId) => {
+    const capability = capabilityRecord(capabilityId);
+    return envelopeCapabilities.has(capabilityId) && envelopeSources.has(capability?.source);
   });
 }
 

@@ -16,6 +16,7 @@
     "test:r6": "node test/r6/run.mjs",
     "test:r4": "node test/r4/run.mjs",
     "test:r8": "node test/r8/run.mjs",
+    "test:server-discover": "node test/discovery/run.mjs",
     "predeploy": "npm run compile:policy",
     "deploy": "npx wrangler deploy"
   },
