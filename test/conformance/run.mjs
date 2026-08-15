@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { hmacSha256Hex, hashIntentEnvelope } from "../../src/intent/canonical.js";
+import { policyArtifactHash } from "../../src/audit/receipts.js";
+import policyData from "../../src/policy/generated/data.json" with { type: "json" };
 import { signingPayload, toBase64Url } from "../../src/identity/signatures.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -13,7 +15,9 @@ const fixturesPath = args.fixtures ?? resolve(__dirname, "fixtures", "p-strict.j
 
 const scenarios = JSON.parse(await readFile(scenariosPath, "utf8"));
 const fixtures = JSON.parse(await readFile(fixturesPath, "utf8"));
+const expectedPolicyHash = args["expect-policy-hash"] ?? await policyArtifactHash(policyData);
 const results = [];
+let policyHashVerified = 0;
 
 for (const scenario of scenarios) {
   try {
@@ -22,6 +26,8 @@ for (const scenario of scenarios) {
     assert.equal(response.body?.error, undefined, `${scenario.id}: gateway returned JSON-RPC error`);
 
     const result = response.body?.result ?? {};
+    assert.equal(result.audit?.policy_hash, expectedPolicyHash, `${scenario.id}: policy_hash binding`);
+    policyHashVerified += 1;
     assert.equal(result.decision, scenario.expect.decision, `${scenario.id}: decision`);
     assert.equal(result.rule_id, scenario.expect.rule_id, `${scenario.id}: rule_id`);
 
@@ -79,10 +85,13 @@ const families = Object.fromEntries(
 );
 
 console.log(JSON.stringify({ target, total: results.length, summary, families, results }, null, 2));
+if (args.report) {
+  await writeReport(args.report, { expectedPolicyHash, policyHashVerified, results, summary, families });
+}
 process.exitCode = summary.red > 0 || summary.xpass > 0 ? 1 : 0;
 
-async function callGateway(url, scenario, policy) {
-  const identity = scenario.identity ? policy.identities[scenario.identity] : null;
+async function callGateway(url, scenario, fixtures) {
+  const identity = scenario.identity ? fixtures.identities[scenario.identity] : null;
   const sessionId = identity ? `conformance-${scenario.id}-${crypto.randomUUID()}` : null;
   if (identity) await startSession(url, identity, sessionId);
   const body = {
@@ -90,7 +99,6 @@ async function callGateway(url, scenario, policy) {
     id: scenario.id,
     method: "boundary/evaluate",
     params: {
-      policy,
       identity_id: identity?.id ?? null,
       action: scenario.action
     }
@@ -170,6 +178,48 @@ function assertAudit(audit, scenario) {
   ]) {
     assert.ok(Object.hasOwn(audit, field), `${scenario.id}: audit.${field} missing`);
   }
+}
+
+async function writeReport(reportPath, { expectedPolicyHash, policyHashVerified, results, summary, families }) {
+  const resolvedReportPath = resolve(reportPath);
+  await mkdir(dirname(resolvedReportPath), { recursive: true });
+  const verdict = summary.red === 0 && summary.xpass === 0 ? "PASS" : "FAIL";
+  const familyRows = Object.entries(families)
+    .map(([family, counts]) => `| ${family} | ${counts.green} | ${counts.red} | ${counts.xfail} | ${counts.xpass ?? 0} |`)
+    .join("\n");
+  const scenarioRows = results
+    .map((result) => `| ${result.id} | ${result.status} | ${result.status === "red" ? formatCell(result.error) : "-"} |`)
+    .join("\n");
+  const report = [
+    `# Conformance report`,
+    ``,
+    `## Verdict: ${verdict}`,
+    ``,
+    `Counts: ${results.length} total; ${summary.green} green; ${summary.red} red; ${summary.xfail} xfail; ${summary.xpass} xpass.`,
+    ``,
+    `Policy artifact hash: \`${expectedPolicyHash}\``,
+    `Policy hash verified on ${policyHashVerified} responses.`,
+    ``,
+    `Scenario inputs are synthetic. Decisions are produced by the reference gateway and are reproducible from a clean clone.`,
+    ``,
+    `## By family`,
+    ``,
+    `| Family | Green | Red | Xfail | Xpass |`,
+    `| --- | ---: | ---: | ---: | ---: |`,
+    familyRows,
+    ``,
+    `## By scenario`,
+    ``,
+    `| Scenario | Status | Failure detail |`,
+    `| --- | --- | --- |`,
+    scenarioRows,
+    ``
+  ].join("\n");
+  await writeFile(resolvedReportPath, report, "utf8");
+}
+
+function formatCell(value) {
+  return String(value ?? "").replace(/\|/g, "\\|").replace(/\s+/g, " ").trim();
 }
 
 function parseArgs(argv) {
