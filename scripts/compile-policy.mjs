@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 
@@ -9,6 +9,7 @@ const inputPath = resolve(root, process.argv[2] ?? "policy/boundary-policy.yaml"
 const generatedDir = resolve(root, "src/policy/generated");
 const buildDir = resolve(root, ".policy-build");
 const regoPath = resolve(root, "src/policy/compile/boundary.rego");
+const regoBuildPath = relative(root, regoPath).replaceAll("\\", "/");
 const detectorSetsPath = resolve(root, "policy/egress-detectors.json");
 const opaBin = process.env.OPA_BIN ?? "opa";
 
@@ -64,9 +65,9 @@ execFileSync(opaBin, [
   "build",
   "-t", "wasm",
   "-e", "boundary/decision",
-  regoPath,
+  regoBuildPath,
   "-o", resolve(buildDir, "bundle.tar.gz")
-], { stdio: "inherit" });
+], { cwd: root, stdio: "inherit" });
 
 execFileSync("tar", [
   "-xzf", resolve(buildDir, "bundle.tar.gz"),
