@@ -28,7 +28,7 @@ worker.stderr.on("data", (chunk) => { workerOutput += chunk; });
 try {
   const target = `http://127.0.0.1:${port}/mcp`;
   await waitForGateway(target, worker);
-  const suite = spawn(process.execPath, [resolve(__dirname, "run.mjs"), "--target", target], {
+  const suite = spawn(process.execPath, [resolve(__dirname, "run.mjs"), "--target", target, ...process.argv.slice(2)], {
     cwd: repoRoot,
     stdio: "inherit",
     env: { ...process.env, TEST_R6_AGENT_PRIVATE_JWK: JSON.stringify(r6.agent.private_jwk), TEST_R6_AGENT_KEY_ID: r6.keyId, TEST_R6_OWNER_BOOTSTRAP_KEY: ownerBootstrapKey }

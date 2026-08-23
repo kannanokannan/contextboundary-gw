@@ -27,7 +27,14 @@ jobs:
       - run: npm ci
       - run: npm run compile:policy
       - run: git diff --exit-code src/policy/generated/
-      - run: npm run test:conformance
+      - run: npm run test:conformance -- --report test/conformance/CONFORMANCE.md
+      - run: cat test/conformance/CONFORMANCE.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: conformance-report
+          path: test/conformance/CONFORMANCE.md
+          if-no-files-found: error
+      - run: git diff --exit-code test/conformance/CONFORMANCE.md
       - run: npm run test:interception
       - run: npm run test:receipts
       - run: npm run test:intent-envelope
