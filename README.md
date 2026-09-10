@@ -2,7 +2,7 @@
 
 [![PR gate](https://github.com/kannanokannan/contextboundary-gw/actions/workflows/pr-gate.yml/badge.svg?branch=main)](https://github.com/kannanokannan/contextboundary-gw/actions/workflows/pr-gate.yml)
 
-`contextboundary-gw` is a self-hosted MCP gateway that applies deterministic, compiled policy to tool discovery, invocation, and outbound data flow. No model is in the enforcement path.
+`contextboundary-gw` is a self-hosted MCP gateway that applies deterministic, compiled policy to tool discovery, invocation, and outbound data flow. No model is in the runtime enforcement path.
 
 **AARM-aligned strict-determinism profile. All Core requirements (R1–R6) are implemented and CI-verified. Independent conformance review has not been undertaken.**
 
@@ -85,6 +85,9 @@ See [`audit/verify-receipt.mjs`](audit/verify-receipt.mjs) and the runnable [AMS
 
 - This is a self-hosted reference implementation, not a hosted service; it is not deployed.
 - Independent conformance review has not been undertaken.
+- The gateway governs what passes through it. Agents that do not speak MCP, direct API calls that bypass the gateway, and side channels are outside its control. It is a control point, not a network perimeter.
+- Determinism is a runtime property. Policy authoring, capability registration, and intent-envelope issuance sit upstream of the enforcement path, not inside it.
+- Adversarial scenarios are authored in this repository. No external red team has reviewed them.
 - R6 proves that the key registered to agent X signed an action. It does not identify the human behind that agent.
 - R7 deliberately differs from AARM's semantic-distance approach by using deterministic envelope-drift counting.
 - Production operation requires deployment-specific Worker bindings, an agent public-key registry, and gateway signing material configured outside this repository.

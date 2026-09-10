@@ -9,6 +9,8 @@ Policy hash verified on 22 responses.
 
 Scenario inputs are synthetic. Decisions are produced by the reference gateway and are reproducible from a clean clone.
 
+Coverage: these scenarios exercise families R1-R5 and audit. R6 agent identity is proved by `npm run test:r6` and the intent-envelope suite, not by the scenarios below. Adversarial scenarios are authored in this repository; no external red team has reviewed them.
+
 ## By family
 
 | Family | Green | Red | Xfail | Xpass |
